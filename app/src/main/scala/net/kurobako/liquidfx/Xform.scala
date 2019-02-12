@@ -2,10 +2,10 @@ package net.kurobako.liquidfx
 
 import net.kurobako.liquidfx.Xform.RotateOrder
 import net.kurobako.liquidfx.Xform.RotateOrder.ZYX
-import scalafx.scene.Group
+import scalafx.scene.Node
 import scalafx.scene.transform.{Rotate, Scale, Translate}
 
-class Xform(val node: Group) {
+class Xform(val node: Node) {
 
 
 	val t          = new Translate
