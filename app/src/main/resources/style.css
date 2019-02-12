@@ -1,0 +1,48 @@
+
+.root {
+    -fx-base: #3f474f;
+    -fx-accent: #e7eff7 ;
+}
+
+.tool-bar {
+    -fx-padding: 8px;
+}
+
+.inline-error {
+    -fx-padding: 16px;
+}
+
+.monospaced {
+    -fx-font-family: monospace;
+}
+
+
+
+.commit-tracked {
+    -fx-background-color: rgba(10, 141, 11, 0.75);
+}
+
+.task {
+    -fx-font-family: monospace;
+}
+
+.error {
+    -fx-background-color: rgba(194, 30, 56, 0.75);
+}
+
+.info {
+    -fx-background-color: rgba(31, 141, 38, 0.75);
+}
+
+.stdout {
+    -fx-background-color: rgb(0, 183, 255);
+}
+
+.stderr {
+    -fx-background-color: rgb(255, 0, 142);
+}
+
+.highlight{
+    -fx-text-fill: yellow;
+    -fx-background-color: rgb(255, 0, 142);
+}
