@@ -4,18 +4,41 @@ import scalafx.Includes._
 import scalafx.geometry.Point2D
 import scalafx.scene._
 import scalafx.scene.input.MouseEvent
-import scalafx.scene.paint.Color
+import scalafx.scene.paint.{Color, PhongMaterial}
+import scalafx.scene.shape.Box
 import scalafx.scene.transform.Translate
 
 
 object SceneControl {
 
+	def mkAxis() = {
+		val xAxis = new Box(240.0, 1, 1) {
+			material = new PhongMaterial {
+				diffuseColor = Color.DarkRed
+				specularColor = Color.Red
+			}
+		}
+		val yAxis = new Box(1, 240.0, 1) {
+			material = new PhongMaterial {
+				diffuseColor = Color.DarkGreen
+				specularColor = Color.Green
+			}
+		}
+		val zAxis = new Box(1, 1, 240.0) {
+			material = new PhongMaterial {
+				diffuseColor = Color.DarkBlue
+				specularColor = Color.Blue
+			}
+		}
+		new Group(xAxis, yAxis, zAxis)
+	}
+
 	def mkScene(that: Parent, width: Double, height: Double) = {
+
 
 		val root = new Group(that)
 		val xform: Xform = new Xform(that)
 		val perspective: Camera = new PerspectiveCamera()
-
 
 		val scene = new SubScene(root, width, height, true, SceneAntialiasing.Balanced) {
 			camera = perspective
@@ -28,18 +51,18 @@ object SceneControl {
 		}.delegate
 
 
-		val CONTROL_MULTIPLIER = 0.1
-		val SHIFT_MULTIPLIER = 0.1
-		val ALT_MULTIPLIER = 0.5
-		val MOUSE_SPEED = 0.5
+		perspective.translateZ = -100
+		perspective.nearClip = 0
+
+		val MOUSE_SPEED = 1.5
 		val TRACK_SPEED = 1.0
 		val ROTATION_SPEED = 0.3
-		val modifierFactor = 0.3
+		val modifierFactor = 0.85
 
 		def rotate(delta: Point2D) = {
 			xform.rotate(
-				xform.rx.getAngle - delta.y * modifierFactor * ROTATION_SPEED,
-				xform.ry.getAngle + delta.x * modifierFactor * ROTATION_SPEED
+				xform.rx.getAngle + delta.y * modifierFactor * ROTATION_SPEED,
+				xform.ry.getAngle - delta.x * modifierFactor * ROTATION_SPEED
 			)
 		}
 
@@ -51,9 +74,8 @@ object SceneControl {
 		}
 
 		def zoom(factor: Double) = {
-			perspective.translateZ = perspective.getTranslateZ + factor * MOUSE_SPEED
+			perspective.translateZ = perspective.getTranslateZ + factor * -MOUSE_SPEED
 		}
-
 
 		def scenePos(event: MouseEvent) = new Point2D(event.sceneX, event.sceneY)
 
@@ -72,7 +94,7 @@ object SceneControl {
 					if (de.isShiftDown) {
 						translate(delta)
 					} else if (de.isControlDown) {
-						zoom(delta.x)
+						zoom((delta.x + delta.y) / 2)
 					} else {
 						rotate(delta)
 					}
