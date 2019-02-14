@@ -7,9 +7,9 @@ import scalafx.Includes._
 import scalafx.animation._
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
-import scalafx.beans.property.StringProperty
-import scalafx.scene._
-import scalafx.scene.control.{Button, Label}
+import scalafx.beans.property.{DoubleProperty, IntegerProperty, StringProperty}
+import scalafx.scene.{text, _}
+import scalafx.scene.control.{Button, Label, Slider, ToggleButton}
 import scalafx.scene.layout.{HBox, Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
 import scalafx.scene.shape.{Box, DrawMode, Sphere}
@@ -21,7 +21,10 @@ import scala.collection.parallel.ForkJoinTaskSupport
 object Application extends JFXApp {
 
 
-	val info = StringProperty("")
+	val info    = StringProperty("")
+	val iter    = IntegerProperty(5)
+	val gravity = DoubleProperty(9.8)
+	val deltaT = DoubleProperty(1)
 
 	val box   = new Box(100, 100, 100) {
 		material = new PhongMaterial(Color.Red)
@@ -47,39 +50,40 @@ object Application extends JFXApp {
 	}
 
 
-	val r   = 5
+	val r   = 6
 	val div = r / 2
 	val xs  = (for {
-		x <- 0 to 90 by r
-		y <- 0 to 90 by r
-		z <- 0 to 90 by r
+		x <- 0 to 100 by r
+		y <- 0 to 100 by r
+		z <- 0 to 100 by r
 	} yield Particle(a = new Sphere(r * 0.85) {
-	}, position = Vec3(x.toFloat ,  y.toFloat - 200, z.toFloat))).toArray
+	}, position = Vec3(x.toFloat, y.toFloat - 200, z.toFloat))).toArray
 
 
 	render(xs)
 
-	val ball      = new Sphere(120) {
+	val ball = new Sphere(120) {
 		drawMode = DrawMode.Line
 		translateY = 120
 	}
 
-	val box2      = new Box(10, 320, 420) {
+	val box2 = new Box(20, 320, 420) {
 		drawMode = DrawMode.Fill
 		translateX = -120
-		translateY = 120
+		translateY = 100
 		translateZ = -120
 	}
 
 
-	val box3      = new Box(10, 320, 420) {
+	val box3 = new Box(120, 320, 420) {
 		drawMode = DrawMode.Fill
 		translateX = 120
-		translateY = 120
-		translateZ = 120
+		translateY = 100
+		translateZ = 100
 	}
 
-	val container = new Box(800, 500, 500) {
+
+	val container = new Box(1000, 500, 370) {
 		drawMode = DrawMode.Line
 		//		material = new PhongMaterial(Color.WhiteSmoke.opacity(0.2))
 	}
@@ -114,8 +118,8 @@ object Application extends JFXApp {
 	}
 
 	def convexBoxCollider(b: Box): Ray => Vec3 = {
-		case Ray(prev, origin, vv) =>
-			val vel = vv .normalise
+		case Ray(prev, origin, vv) => if (b.isVisible) {
+			val vel = vv.normalise
 			val pos = nodePos(b)
 			val dim = Vec3(b.getWidth, b.getHeight, b.getDepth) / 2
 			val min = pos - dim
@@ -149,10 +153,11 @@ object Application extends JFXApp {
 				origin
 			} else {
 
-				if(t7 < 0) prev
+				if (t7 < 0) prev
 				else
-				origin // - (origin distance prev)
+					origin // - (origin distance prev)
 			}
+		} else origin
 	}
 
 	def convexSphereCollider(b: Sphere): Ray => Vec3 = {
@@ -189,8 +194,7 @@ object Application extends JFXApp {
 	new Thread(() => {
 
 
-
-		val solver = new SphSolver(scale = 250d, iteration = 2)
+		val solver = new SphSolver(scale = 450d)
 		val obstacles = Array(
 			concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
@@ -200,7 +204,10 @@ object Application extends JFXApp {
 		)
 		(0 to Int.MaxValue).foldLeft(xs) { (acc, n) =>
 			val start = System.currentTimeMillis()
-			val that = solver.advance()(acc, obstacles)
+			val that = solver.advance(
+				dt = 0.0083 * deltaT.value,
+				iteration = iter.value,
+				constantForce = { p : Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
 			val elapsedMs = System.currentTimeMillis() - start
 			val text = s"Frame[$n] ${(1000.0 / elapsedMs).toInt}fps (${elapsedMs}ms) @${that.length} particles"
 			println(text)
@@ -215,7 +222,7 @@ object Application extends JFXApp {
 	val subScene = SceneControl.mkScene(new Group(
 		SceneControl.mkAxis(),
 		container,
-//		ball,
+		//		ball,
 		box2,
 		box3,
 		//				plane,
@@ -229,24 +236,56 @@ object Application extends JFXApp {
 		title = "SPH simulation"
 		scene = new Scene(new VBox(
 
+
 			new StackPane {
-				children = subScene
+				children = Seq(
+					subScene,
+					new HBox(
+
+						new Label("") {
+							text <== iter.asString("Iter(%d):")
+						}, new Slider(1, 30, 3) {
+							prefWidth = 250
+							iter <== value
+						},
+						new Label("") {
+							text <== gravity.asString("Gravity(%.2f):")
+						}, new Slider(-10, 100, 9.8) {
+							prefWidth = 250
+							gravity <== value
+						},
+						new Label("") {
+							text <== deltaT.asString("ΔT(0.00083)×(%.2f):")
+						}, new Slider(0.1, 10, 1) {
+							prefWidth = 250
+							deltaT <== value
+						}
+
+					){pickOnBounds = false}
+				)
 				subScene.width <== width
 				subScene.height <== height
 				vgrow = Priority.Always
 			},
-			new HBox(new Label() {text <== info}, new Button("Animate") {
-				onAction = handle {
-					println(tl.getStatus)
-					if (tl.getStatus == Animation.Status.Stopped.delegate) {
-						tl.play()
-					} else tl.stop()
+			new HBox(new Label() {text <== info},
+				new Button("Animate") {
+					onAction = handle {
+						println(tl.getStatus)
+						if (tl.getStatus != Animation.Status.Running.delegate) {
+							tl.play()
+						} else tl.pause()
 
+					}
+				},
+				new ToggleButton("Toggle box") {
+					box2.visible <== selected
+					box3.visible <== selected
 				}
-			}) {
+			) {
 				styleClass += "tool-bar"
 				style = "-fx-font-family: 'monospaced'"
-			}
+			},
+
 		), 800, 800)
 
 

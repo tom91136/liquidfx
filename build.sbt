@@ -132,14 +132,28 @@ lazy val app = project.in(file("app")).settings(
 		"org.scalafx" %% "scalafx" % "11-R16",
 		"org.controlsfx" % "controlsfx" % "9.0.0",
 
+		"com.thoughtworks.compute" %% "gpu" % "0.4.3",
+
 		"org.fxmisc.flowless" % "flowless" % "0.6.1",
 		"org.fxmisc.easybind" % "easybind" % "1.0.3",
 
 		"org.scalatest" %% "scalatest" % "3.0.5" % Test,
 		"org.scalacheck" %% "scalacheck" % "1.14.0" % Test,
+
+		"org.lwjgl" % "lwjgl" % "3.2.1",
+		"org.lwjgl" % "lwjgl" % "3.2.1" classifier {
+			import scala.util.Properties._
+			if (isMac) "natives-macos"
+			else if (isLinux) "natives-linux"
+			else if (isWin) "natives-windows"
+			else throw new MessageOnlyException(s"lwjgl does not support ${scala.util.Properties.osName}")
+		}
+
 	) ++ Seq("controls", "graphics", "fxml", "media", "web", "base").map {
 		module => "org.openjfx" % s"javafx-$module" % javaFxVersion classifier (osName in liquidfx).value
 	}
+
+
 )
 
 lazy val benchmark = project.in(file("benchmark")).settings(

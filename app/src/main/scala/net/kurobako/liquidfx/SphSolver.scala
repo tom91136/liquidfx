@@ -5,19 +5,18 @@ import java.util.concurrent.ConcurrentHashMap
 import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Vec3}
 
 import scala.collection.parallel.ForkJoinTaskSupport
+import scala.reflect.ClassTag
 
 // based on https://nccastaff.bournemouth.ac.uk/jmacey/MastersProjects/MSc15/06Burak/BurakErtekinMScThesis.pdf
 // and also http://mmacklin.com/pbf_sig_preprint.pdf
-class SphSolver(val h: Double = 0.1,
-				val iteration: Int = 5,
+class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 				val scale: Double = 100,
 			   ) {
 
-	final val Vd = 0.49
-
-	final val Rho        = 6378
+	final val Vd = 0.49 // Velocity dampening
+	final val Rho = 6378 // Reference density
 	final val Epsilon    = 0.00000001
-	final val CfmEpsilon = 600.0
+	final val CfmEpsilon = 600.0 // CFM propagation
 
 	final val C                = 0.00001
 	final val VorticityEpsilon = 0.0005
@@ -44,9 +43,8 @@ class SphSolver(val h: Double = 0.1,
 	}
 
 
-
-
 	def advance[A](dt: Double = 0.0083,
+				   iteration: Int,
 				   constantForce: Particle[A] => Vec3 = { p: Particle[A] => Vec3(0d, p.mass * 9.8, 0d) })
 				  (ps: Array[Particle[A]],
 				   obs: Seq[Ray => Vec3]): Array[Particle[A]] = {
@@ -80,16 +78,38 @@ class SphSolver(val h: Double = 0.1,
 			}
 		}
 
+
+		// hotspot 60%
 		def solveLambda(xs: Seq[Atom]): Unit = xs.par.foreach { a =>
-			val rho = a.neighbours.map(b => b.particle.mass * poly6Kernel(a.now distance b.now)).sum
+
+
+//			var v3i = Vec3.Zero
+//			var init = 0d
+//			var i = 0
+//			while(i < a.neighbours.length){
+//				val b = a.neighbours(i)
+//				init += b.particle.mass * poly6Kernel(a.now distance b.now)
+//				v3i = spikyKernelGradient(a.now, b.now) *+ (1.0 / Rho, v3i)
+//				i+=1
+//			}
+//			val norm2 = v3i.lengthSquared
+//			val rho = init
+
+
+			// foldLeft 23%
+			val rho =  a.neighbours.foldLeft(0d)((acc, b) => acc + b.particle.mass * poly6Kernel(a.now distance b.now))
+
+			// foldLeft 23%
 			val norm2 = a.neighbours.foldLeft(Vec3.Zero) { (acc, b) =>
 				spikyKernelGradient(a.now, b.now) *+ (1.0 / Rho, acc)
 			}.lengthSquared
+
 
 			val C = rho / Rho - 1.0
 			a.lambda = -C / (norm2 + CfmEpsilon)
 		}
 
+		// hotspot 30%
 		def solveDeltaP(xs: Seq[Atom]): Unit = xs.par.foreach { a =>
 			a.deltaP = a.neighbours.foldLeft(Vec3.Zero) { (acc, b) =>
 				// disable corr by setting it to 0
@@ -142,6 +162,7 @@ class SphSolver(val h: Double = 0.1,
 
 		val atoms = applyForces(ps)
 		findNeighbour(atoms)
+		// hotspot 90%
 		for (_ <- 0 until iteration) {
 			solveLambda(atoms)
 			solveDeltaP(atoms)
@@ -173,7 +194,7 @@ object SphSolver {
 	}
 	case class Vec3(x: Double, y: Double, z: Double) {
 
-		@inline def array: Array[Double] = Array(x, y, z)
+		@inline def array[N: ClassTag](f: Double => N): Array[N] = Array(f(x), f(y), f(z))
 		@inline def tuple: (Double, Double, Double) = (x, y, z)
 
 		@inline def *+(t: Double, that: Vec3): Vec3 = Vec3(
