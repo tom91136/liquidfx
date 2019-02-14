@@ -52,7 +52,7 @@ object SceneControl {
 
 
 		perspective.translateZ = -100
-		perspective.nearClip = 0
+		perspective.nearClip = 0.1
 
 		val MOUSE_SPEED = 1.5
 		val TRACK_SPEED = 1.0

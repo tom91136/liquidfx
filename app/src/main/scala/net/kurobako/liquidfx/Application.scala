@@ -5,16 +5,17 @@ import javafx.animation.Interpolator
 import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Vec3}
 import scalafx.Includes._
 import scalafx.animation._
-import scalafx.application.{JFXApp, Platform}
 import scalafx.application.JFXApp.PrimaryStage
-import scalafx.beans.property.{LongProperty, StringProperty}
+import scalafx.application.{JFXApp, Platform}
+import scalafx.beans.property.StringProperty
 import scalafx.scene._
-import scalafx.scene.control.{Button, Label, Menu, MenuBar}
-import scalafx.scene.input.{KeyCode, KeyEvent}
+import scalafx.scene.control.{Button, Label}
 import scalafx.scene.layout.{HBox, Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
 import scalafx.scene.shape.{Box, DrawMode, Sphere}
 import scalafx.util.Duration
+
+import scala.collection.parallel.ForkJoinTaskSupport
 
 
 object Application extends JFXApp {
@@ -49,23 +50,38 @@ object Application extends JFXApp {
 	val r   = 5
 	val div = r / 2
 	val xs  = (for {
-		x <- 0 to 100 by r
+		x <- 0 to 90 by r
 		y <- 0 to 90 by r
-		z <- 0 to 50 by r
+		z <- 0 to 90 by r
 	} yield Particle(a = new Sphere(r * 0.85) {
-	}, position = Vec3(x.toFloat, 3 - z.toFloat, y.toFloat))).toArray
+	}, position = Vec3(x.toFloat ,  y.toFloat - 200, z.toFloat))).toArray
 
 
 	render(xs)
 
-	val ball      = new Sphere(10) {}
-	val container = new Box(1000, 500, 500) {
+	val ball      = new Sphere(120) {
+		drawMode = DrawMode.Line
+		translateY = 120
+	}
+
+	val box2      = new Box(10, 320, 420) {
+		drawMode = DrawMode.Fill
+		translateX = -120
+		translateY = 120
+		translateZ = -120
+	}
 
 
+	val box3      = new Box(10, 320, 420) {
+		drawMode = DrawMode.Fill
+		translateX = 120
+		translateY = 120
+		translateZ = 120
+	}
+
+	val container = new Box(800, 500, 500) {
 		drawMode = DrawMode.Line
 		//		material = new PhongMaterial(Color.WhiteSmoke.opacity(0.2))
-
-
 	}
 
 	val quadDecel = new Interpolator {
@@ -89,34 +105,102 @@ object Application extends JFXApp {
 	def concaveBoxCollider(b: Box): Ray => Vec3 = { r =>
 		val origin = nodePos(b)
 		val dim = Vec3(b.getWidth, b.getHeight, b.getDepth) / 2
-		val s = origin - dim
-		val e = origin + dim
+		val min = origin - dim
+		val max = origin + dim
 		r.origin.clamp(
-			s.x, e.x,
-			s.y, e.y,
-			s.z, e.z)
+			min.x, max.x,
+			min.y, max.y,
+			min.z, max.z)
+	}
+
+	def convexBoxCollider(b: Box): Ray => Vec3 = {
+		case Ray(prev, origin, vv) =>
+			val vel = vv .normalise
+			val pos = nodePos(b)
+			val dim = Vec3(b.getWidth, b.getHeight, b.getDepth) / 2
+			val min = pos - dim
+			val max = pos + dim
+
+			//https://gamedev.stackexchange.com/a/103714/73429
+
+			val t1 = (min.x - origin.x) / vel.x
+			val t2 = (max.x - origin.x) / vel.x
+			val t3 = (min.y - origin.y) / vel.y
+			val t4 = (max.y - origin.y) / vel.y
+			val t5 = (min.z - origin.z) / vel.z
+			val t6 = (max.z - origin.z) / vel.z
+
+			val aMin = if (t1 < t2) t1 else t2
+			val bMin = if (t3 < t4) t3 else t4
+			val cMin = if (t5 < t6) t5 else t6
+
+			val aMax = if (t1 > t2) t1 else t2
+			val bMax = if (t3 > t4) t3 else t4
+			val cMax = if (t5 > t6) t5 else t6
+
+			val fMax = if (aMin > bMin) aMin else bMin
+			val fMin = if (aMax < bMax) aMax else bMax
+
+			val t7 = if (fMax > cMin) fMax else cMin
+			val t8 = if (fMin < cMax) fMin else cMax
+
+			if (t8 < 0 || t7 > t8) {
+				// no intersection
+				origin
+			} else {
+
+				if(t7 < 0) prev
+				else
+				origin // - (origin distance prev)
+			}
 	}
 
 	def convexSphereCollider(b: Sphere): Ray => Vec3 = {
-		case Ray(origin, velocity) =>
-			val r = b.getRadius
+		case Ray(prev, origin, vec) =>
 			val centre = Vec3(b.getTranslateX, b.getTranslateY, b.getTranslateZ)
-			if ((origin - centre).magnitude < r * r) {
-				origin - velocity
-				// inside
-				// TODO finish
-			} else {
+			val r = b.getRadius
+			val radius2 = r * r
+
+
+			val dir = vec.normalise
+
+			val L = centre - origin
+			val tca = L dot dir
+			val d2 = (L dot L) - tca * tca
+
+			if (d2 > radius2) { // no change
 				origin
+			} else {
+				val thc = Math.sqrt(radius2 - d2)
+				val t0 = tca - thc
+				val t1 = tca + thc
+				if (t0 < 0 && t1 < 0) {
+					origin
+				} else {
+					val s = t0 min t1
+					val b = t0 max t1
+					val t = if (s < 0) b else s
+					println(t)
+					origin + (dir * (t / 500))
+				}
 			}
 	}
 
 	new Thread(() => {
 
-		val solver = new SphSolver(scale = 500d, iteration = 3)
 
+
+		val solver = new SphSolver(scale = 250d, iteration = 2)
+		val obstacles = Array(
+			concaveBoxCollider(container),
+			//				convexSphereCollider(ball),
+			convexBoxCollider(box2),
+			convexBoxCollider(box3),
+
+		)
 		(0 to Int.MaxValue).foldLeft(xs) { (acc, n) =>
 			val start = System.currentTimeMillis()
-			val that = solver.advance()(acc, Seq(concaveBoxCollider(container)))
+			val that = solver.advance()(acc, obstacles)
 			val elapsedMs = System.currentTimeMillis() - start
 			val text = s"Frame[$n] ${(1000.0 / elapsedMs).toInt}fps (${elapsedMs}ms) @${that.length} particles"
 			println(text)
@@ -131,7 +215,9 @@ object Application extends JFXApp {
 	val subScene = SceneControl.mkScene(new Group(
 		SceneControl.mkAxis(),
 		container,
-		//		ball,
+//		ball,
+		box2,
+		box3,
 		//				plane,
 		//		box,
 	) {
