@@ -2,17 +2,19 @@ package net.kurobako.liquidfx
 
 import cats.implicits._
 import javafx.animation.Interpolator
+import net.kurobako.liquidfx.Metaball.{GridCell, Triangle}
 import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Vec3}
 import scalafx.Includes._
 import scalafx.animation._
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
 import scalafx.beans.property.{DoubleProperty, IntegerProperty, StringProperty}
+import scalafx.collections.ObservableFloatArray
 import scalafx.scene.{text, _}
 import scalafx.scene.control.{Button, Label, Slider, ToggleButton}
 import scalafx.scene.layout.{HBox, Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
-import scalafx.scene.shape.{Box, DrawMode, Sphere}
+import scalafx.scene.shape._
 import scalafx.util.Duration
 
 import scala.collection.parallel.ForkJoinTaskSupport
@@ -24,11 +26,11 @@ object Application extends JFXApp {
 	val info    = StringProperty("")
 	val iter    = IntegerProperty(5)
 	val gravity = DoubleProperty(9.8)
-	val deltaT = DoubleProperty(1)
+	val deltaT  = DoubleProperty(1)
 
 	val box   = new Box(100, 100, 100) {
 		material = new PhongMaterial(Color.Red)
-		translateY = -50
+		translateY = 0
 	}
 	val plane = new Box(1000, 1, 1000) {
 		material = new PhongMaterial(Color.White)
@@ -37,20 +39,42 @@ object Application extends JFXApp {
 
 
 	def render(xs: Seq[Particle[Sphere]]) = {
+
+		val start = System.currentTimeMillis()
+
+
+		val bs = MutableUnsafeOctree[Vec3](Vec3.Zero, 5)(identity)
+		xs.foreach(x => bs.insertPoint(x.position))
+
+
+		val ts = Metaball.mkLattice(10, -50, 50) { p =>
+
+//			bs.pointsInSphere(p, 40).headOption.map(a => a.dot(p)).getOrElse(0)
+//
+			xs.find(x => x.position.distance(p) < 50).map(a => a.position.dot(p)).getOrElse(0)
+		}()
+		val end = System.currentTimeMillis() - start
+		println(end)
+
 		def clamp(min: Double, max: Double, value: Double) = Math.max(min, Math.min(max, value))
 		Platform.runLater {
+
+			updateMesh(mesh, ts)
+
 			xs.foreach { p =>
 				p.a.translateX = p.position.x
 				p.a.translateY = p.position.y
 				p.a.translateZ = p.position.z
 				val v = clamp(120, 255, p.velocity.lengthSquared * 100).toInt
-				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, v.toFloat / 255))
+				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, 0.2))
+
+
 			}
 		}
 	}
 
 
-	val r   = 6
+	val r   = 30
 	val div = r / 2
 	val xs  = (for {
 		x <- 0 to 100 by r
@@ -87,6 +111,9 @@ object Application extends JFXApp {
 		drawMode = DrawMode.Line
 		//		material = new PhongMaterial(Color.WhiteSmoke.opacity(0.2))
 	}
+
+	val mesh = new TriangleMesh()
+
 
 	val quadDecel = new Interpolator {
 		override def curve(input: Double) = 1.0f - Math.pow(1.0f - input, 4d)
@@ -203,30 +230,47 @@ object Application extends JFXApp {
 
 		)
 		(0 to Int.MaxValue).foldLeft(xs) { (acc, n) =>
+
 			val start = System.currentTimeMillis()
 			val that = solver.advance(
 				dt = 0.0083 * deltaT.value,
 				iteration = iter.value,
-				constantForce = { p : Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
+				constantForce = { p: Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
 			val elapsedMs = System.currentTimeMillis() - start
 			val text = s"Frame[$n] ${(1000.0 / elapsedMs).toInt}fps (${elapsedMs}ms) @${that.length} particles"
 			println(text)
 			render(that)
+			Thread.sleep(500)
 			Platform.runLater(info.set(text))
 			that
 		}
 
 	}).start()
 
-	val ambient  = new AmbientLight(Color.LightYellow)
+	val ambient = new AmbientLight(Color.LightYellow)
+
+
+	def updateMesh(mesh: TriangleMesh, xs: Seq[Triangle]) = {
+		mesh.points = xs.flatMap(_.points).map(_.toFloat).toArray
+		mesh.texCoords = Array(0, 0)
+		mesh.faces = Array.tabulate(xs.length * 3)(_ :: 0 :: Nil).flatten
+	}
+
+
 	val subScene = SceneControl.mkScene(new Group(
 		SceneControl.mkAxis(),
 		container,
-		//		ball,
+		//				ball,
+		new MeshView(mesh) {
+			drawMode = DrawMode.Line
+			material = new PhongMaterial(Color.Red)
+			cullFace = CullFace.None
+
+		},
 		box2,
 		box3,
 		//				plane,
-		//		box,
+		//				box,
 	) {
 		children ++= xs.map(_.a.delegate)
 	}, 500, 500)
@@ -261,7 +305,7 @@ object Application extends JFXApp {
 							deltaT <== value
 						}
 
-					){pickOnBounds = false}
+					) {pickOnBounds = false}
 				)
 				subScene.width <== width
 				subScene.height <== height

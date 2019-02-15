@@ -77,7 +77,7 @@ class MutableUnsafeOctree[A: ClassTag](parent: MutableUnsafeOctree[A], centre: V
 
 		if (this.intersectsSphere(centre, radius)) {
 			if (points != null) {
-				results = points.filter(p => (centre - f(p)).magnitudeSquared <= rSquared)
+				results = points.filter(p => (centre - f(p)).magnitudeSq <= rSquared)
 			} else if (childrenCount > 0) {
 				for (i <- 0 until 8) {
 					if (children(i) != null) {

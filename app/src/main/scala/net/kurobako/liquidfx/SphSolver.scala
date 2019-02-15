@@ -83,21 +83,21 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 		def solveLambda(xs: Seq[Atom]): Unit = xs.par.foreach { a =>
 
 
-//			var v3i = Vec3.Zero
-//			var init = 0d
-//			var i = 0
-//			while(i < a.neighbours.length){
-//				val b = a.neighbours(i)
-//				init += b.particle.mass * poly6Kernel(a.now distance b.now)
-//				v3i = spikyKernelGradient(a.now, b.now) *+ (1.0 / Rho, v3i)
-//				i+=1
-//			}
-//			val norm2 = v3i.lengthSquared
-//			val rho = init
+			//			var v3i = Vec3.Zero
+			//			var init = 0d
+			//			var i = 0
+			//			while(i < a.neighbours.length){
+			//				val b = a.neighbours(i)
+			//				init += b.particle.mass * poly6Kernel(a.now distance b.now)
+			//				v3i = spikyKernelGradient(a.now, b.now) *+ (1.0 / Rho, v3i)
+			//				i+=1
+			//			}
+			//			val norm2 = v3i.lengthSquared
+			//			val rho = init
 
 
 			// foldLeft 23%
-			val rho =  a.neighbours.foldLeft(0d)((acc, b) => acc + b.particle.mass * poly6Kernel(a.now distance b.now))
+			val rho = a.neighbours.foldLeft(0d)((acc, b) => acc + b.particle.mass * poly6Kernel(a.now distance b.now))
 
 			// foldLeft 23%
 			val norm2 = a.neighbours.foldLeft(Vec3.Zero) { (acc, b) =>
@@ -194,6 +194,10 @@ object SphSolver {
 	}
 	case class Vec3(x: Double, y: Double, z: Double) {
 
+		@inline def u: Double = x
+		@inline def v: Double = y
+		@inline def w: Double = z
+
 		@inline def array[N: ClassTag](f: Double => N): Array[N] = Array(f(x), f(y), f(z))
 		@inline def tuple: (Double, Double, Double) = (x, y, z)
 
@@ -205,6 +209,7 @@ object SphSolver {
 		//		@inline def *+(t: Double, that: Vec3): Vec3 = (this * t) + that
 
 		@inline def -(that: Vec3): Vec3 = Vec3(x - that.x, y - that.y, z - that.z)
+		@inline def negate: Vec3 = Vec3(-x, -y, -z)
 		@inline def -(amount: Double): Vec3 = Vec3(x - amount, y - amount, z - amount)
 		@inline def +(that: Vec3): Vec3 = Vec3(x + that.x, y + that.y, z + that.z)
 		@inline def +(amount: Double): Vec3 = Vec3(x + amount, y + amount, z + amount)
@@ -223,7 +228,6 @@ object SphSolver {
 			else this / m
 		}
 
-
 		@inline def dot(that: Vec3): Double = x * that.x + y * that.y + z * that.z
 
 		@inline def distance(that: Vec3): Double = {
@@ -231,10 +235,6 @@ object SphSolver {
 			val b = y - that.y
 			val c = z - that.z
 			Math.sqrt(a * a + b * b + c * c)
-		}
-
-		def fastDistance(that: Vec3) = {
-
 		}
 
 		@inline def clamp(xMin: Double, xMax: Double,
@@ -247,10 +247,10 @@ object SphSolver {
 
 		private def clamp(min: Double, max: Double, v: Double) = Math.max(min, Math.min(max, v))
 
-		@inline def length: Double = Math.sqrt(x * x + y * y + z * z)
-		@inline def lengthSquared: Double = length * length
+		@inline def length: Double = Math.sqrt(lengthSquared)
+		@inline def lengthSquared: Double = x * x + y * y + z * z
 		@inline def magnitude: Double = length
-		@inline def magnitudeSquared: Double = lengthSquared
+		@inline def magnitudeSq: Double = lengthSquared
 
 	}
 
