@@ -75,11 +75,15 @@ class MutableUnsafeOctree[A: ClassTag](parent: MutableUnsafeOctree[A], centre: V
 		var results: ArrayBuffer[A] = null
 		val rSquared = radius * radius
 
+
+
+
 		if (this.intersectsSphere(centre, radius)) {
 			if (points != null) {
 				results = points.filter(p => (centre - f(p)).magnitudeSq <= rSquared)
 			} else if (childrenCount > 0) {
-				for (i <- 0 until 8) {
+				var i = 0
+				while(i < 8){
 					if (children(i) != null) {
 						val points = children(i).pointsInSphere0(centre, radius)
 						if (points != null) {
@@ -87,6 +91,7 @@ class MutableUnsafeOctree[A: ClassTag](parent: MutableUnsafeOctree[A], centre: V
 							results ++= points
 						}
 					}
+					i+=1
 				}
 			}
 		}

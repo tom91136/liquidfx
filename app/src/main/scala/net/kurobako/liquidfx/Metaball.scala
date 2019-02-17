@@ -323,6 +323,7 @@ object Metaball {
 	}
 
 	case class GridCell(ps: Array[(Vec3, Double)]) // [8]
+	case class Cell(ps: Array[Vec3]) // [8]
 
 	final val CubeVertices = Array(
 		Vec3(0, 0, 0),
@@ -335,22 +336,25 @@ object Metaball {
 		Vec3(0, 1, 1),
 	)
 
-	def mkLattice(gridSize: Int, min: Int, max: Int)(f: Vec3 => Double)
-				 (xRange: Range = min to max,
-				  yRange: Range = min to max,
-				  zRange: Range = min to max) = {
-
-		def mkCell(x: Int, y: Int, z: Int): GridCell = {
-			val o = Vec3(x, y, z) * gridSize
-			GridCell(CubeVertices.map(_ * gridSize + o).map(p => p -> f(p)))
-		}
+	def mkLattice(gridSize: Int)
+				 (xRange: Range ,
+				  yRange: Range ,
+				  zRange: Range ) = {
 
 		(for {
 			x <- xRange.par
 			y <- yRange
 			z <- zRange
-			t <- Metaball.mkTriangles(mkCell(x, y, z), 100)
-		} yield t).seq
+			offset = Vec3(x, y, z) * gridSize
+		} yield Cell(CubeVertices.map(_ * gridSize + offset))).toArray
+	}
+
+	def parameterise(xs: Seq[Cell], f: Vec3 => Double): Seq[Triangle] = {
+		val n = (for {
+			x <- xs.par
+			t <- mkTriangles(GridCell(x.ps.map(p => p -> f(p))), 100)
+		} yield t).toArray
+		n
 	}
 
 

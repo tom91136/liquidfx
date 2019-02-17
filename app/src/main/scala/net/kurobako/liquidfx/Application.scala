@@ -1,28 +1,30 @@
 package net.kurobako.liquidfx
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, OpenOption, StandardOpenOption}
+import java.util.concurrent.ConcurrentHashMap
+
 import cats.implicits._
 import javafx.animation.Interpolator
-import net.kurobako.liquidfx.Metaball.{GridCell, Triangle}
-import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Vec3}
+import net.kurobako.liquidfx.Metaball.Triangle
+import net.kurobako.liquidfx.SphSolver.{Particle, Vec3}
 import scalafx.Includes._
 import scalafx.animation._
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
-import scalafx.beans.property.{DoubleProperty, IntegerProperty, StringProperty}
-import scalafx.collections.ObservableFloatArray
-import scalafx.scene.{text, _}
+import scalafx.beans.property.{BooleanProperty, DoubleProperty, IntegerProperty, StringProperty}
+import scalafx.scene._
 import scalafx.scene.control.{Button, Label, Slider, ToggleButton}
 import scalafx.scene.layout.{HBox, Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
 import scalafx.scene.shape._
+import scalafx.stage.FileChooser
 import scalafx.util.Duration
-
-import scala.collection.parallel.ForkJoinTaskSupport
 
 
 object Application extends JFXApp {
 
-
+	val play    = BooleanProperty(true)
 	val info    = StringProperty("")
 	val iter    = IntegerProperty(5)
 	val gravity = DoubleProperty(9.8)
@@ -38,29 +40,11 @@ object Application extends JFXApp {
 	}
 
 
-	def render(xs: Seq[Particle[Sphere]]) = {
-
-		val start = System.currentTimeMillis()
-
-
-		val bs = MutableUnsafeOctree[Vec3](Vec3.Zero, 5)(identity)
-		xs.foreach(x => bs.insertPoint(x.position))
-
-
-		val ts = Metaball.mkLattice(10, -50, 50) { p =>
-
-//			bs.pointsInSphere(p, 40).headOption.map(a => a.dot(p)).getOrElse(0)
-//
-			xs.find(x => x.position.distance(p) < 50).map(a => a.position.dot(p)).getOrElse(0)
-		}()
-		val end = System.currentTimeMillis() - start
-		println(end)
+	def render(xs: Seq[Particle[Sphere]], ts: Seq[Triangle]) = {
 
 		def clamp(min: Double, max: Double, value: Double) = Math.max(min, Math.min(max, value))
 		Platform.runLater {
-
 			updateMesh(mesh, ts)
-
 			xs.foreach { p =>
 				p.a.translateX = p.position.x
 				p.a.translateY = p.position.y
@@ -68,23 +52,22 @@ object Application extends JFXApp {
 				val v = clamp(120, 255, p.velocity.lengthSquared * 100).toInt
 				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, 0.2))
 
-
 			}
 		}
 	}
 
 
-	val r   = 30
+	val r   = 8
 	val div = r / 2
 	val xs  = (for {
-		x <- 0 to 100 by r
+		x <- 0 to 80 by r
 		y <- 0 to 100 by r
 		z <- 0 to 100 by r
 	} yield Particle(a = new Sphere(r * 0.85) {
 	}, position = Vec3(x.toFloat, y.toFloat - 200, z.toFloat))).toArray
 
 
-	render(xs)
+	render(xs, Nil)
 
 	val ball = new Sphere(120) {
 		drawMode = DrawMode.Line
@@ -107,7 +90,7 @@ object Application extends JFXApp {
 	}
 
 
-	val container = new Box(1000, 500, 370) {
+	val container = new Box(800, 500, 370) {
 		drawMode = DrawMode.Line
 		//		material = new PhongMaterial(Color.WhiteSmoke.opacity(0.2))
 	}
@@ -131,116 +114,86 @@ object Application extends JFXApp {
 	}
 
 
-	def nodePos(n: Node) = Vec3(n.getTranslateX, n.getTranslateY, n.getTranslateZ)
-
-	def concaveBoxCollider(b: Box): Ray => Vec3 = { r =>
-		val origin = nodePos(b)
-		val dim = Vec3(b.getWidth, b.getHeight, b.getDepth) / 2
-		val min = origin - dim
-		val max = origin + dim
-		r.origin.clamp(
-			min.x, max.x,
-			min.y, max.y,
-			min.z, max.z)
-	}
-
-	def convexBoxCollider(b: Box): Ray => Vec3 = {
-		case Ray(prev, origin, vv) => if (b.isVisible) {
-			val vel = vv.normalise
-			val pos = nodePos(b)
-			val dim = Vec3(b.getWidth, b.getHeight, b.getDepth) / 2
-			val min = pos - dim
-			val max = pos + dim
-
-			//https://gamedev.stackexchange.com/a/103714/73429
-
-			val t1 = (min.x - origin.x) / vel.x
-			val t2 = (max.x - origin.x) / vel.x
-			val t3 = (min.y - origin.y) / vel.y
-			val t4 = (max.y - origin.y) / vel.y
-			val t5 = (min.z - origin.z) / vel.z
-			val t6 = (max.z - origin.z) / vel.z
-
-			val aMin = if (t1 < t2) t1 else t2
-			val bMin = if (t3 < t4) t3 else t4
-			val cMin = if (t5 < t6) t5 else t6
-
-			val aMax = if (t1 > t2) t1 else t2
-			val bMax = if (t3 > t4) t3 else t4
-			val cMax = if (t5 > t6) t5 else t6
-
-			val fMax = if (aMin > bMin) aMin else bMin
-			val fMin = if (aMax < bMax) aMax else bMax
-
-			val t7 = if (fMax > cMin) fMax else cMin
-			val t8 = if (fMin < cMax) fMin else cMax
-
-			if (t8 < 0 || t7 > t8) {
-				// no intersection
-				origin
-			} else {
-
-				if (t7 < 0) prev
-				else
-					origin // - (origin distance prev)
-			}
-		} else origin
-	}
-
-	def convexSphereCollider(b: Sphere): Ray => Vec3 = {
-		case Ray(prev, origin, vec) =>
-			val centre = Vec3(b.getTranslateX, b.getTranslateY, b.getTranslateZ)
-			val r = b.getRadius
-			val radius2 = r * r
-
-
-			val dir = vec.normalise
-
-			val L = centre - origin
-			val tca = L dot dir
-			val d2 = (L dot L) - tca * tca
-
-			if (d2 > radius2) { // no change
-				origin
-			} else {
-				val thc = Math.sqrt(radius2 - d2)
-				val t0 = tca - thc
-				val t1 = tca + thc
-				if (t0 < 0 && t1 < 0) {
-					origin
-				} else {
-					val s = t0 min t1
-					val b = t0 max t1
-					val t = if (s < 0) b else s
-					println(t)
-					origin + (dir * (t / 500))
-				}
-			}
-	}
-
 	new Thread(() => {
 
 
-		val solver = new SphSolver(scale = 450d)
+		val solver = new SphSolver(scale = 550d)
 		val obstacles = Array(
-			concaveBoxCollider(container),
+			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
-			convexBoxCollider(box2),
-			convexBoxCollider(box3),
-
+			Colliders.convexBoxCollider(box2),
+			Colliders.convexBoxCollider(box3),
 		)
-		(0 to Int.MaxValue).foldLeft(xs) { (acc, n) =>
+
+
+		def time[R](name: String)(block: => R): R = {
+			val t0 = System.nanoTime()
+			val result = block
+			val t1 = System.nanoTime()
+			println(s"[$name] " + (t1 - t0).toDouble / 1000000 + "ms")
+			result
+		}
+
+
+		val gs = 10
+		val xsc = 1000.0
+		val ysc = 500.0
+		val zsc = 500.0
+		val diffX = (xsc / gs / 2).toInt
+		val diffY = (ysc / gs / 2).toInt
+		val diffZ = (zsc / gs / 2).toInt
+		val lattice = time("lattice") {
+			Metaball.mkLattice(gs.toInt)(
+				xRange = -diffX to diffX,
+				yRange = -diffY to diffY,
+				zRange = -diffZ to diffZ)
+		}
+
+
+		(0 to Int.MaxValue).foldLeft(xs) { (acc, frame) =>
 
 			val start = System.currentTimeMillis()
-			val that = solver.advance(
-				dt = 0.0083 * deltaT.value,
-				iteration = iter.value,
-				constantForce = { p: Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
+			val that = time("solve") {
+				solver.advance(
+					dt = 0.0083 * deltaT.value,
+					iteration = iter.value,
+					constantForce = { p: Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
+			}
+
+			val ts = time("mc") {
+
+				val bs = time("mc - octree") {
+					val xx = MutableUnsafeOctree[Vec3](Vec3.Zero, 500)(identity)
+					that.foreach(x => xx.insertPoint(x.position))
+					xx
+				}
+
+				val rSq = 100.0 * 100.0
+
+				val cc = new ConcurrentHashMap[Vec3, Double]()
+
+				def doIt(p: Vec3) = {
+					cc.computeIfAbsent(p, p2 => {
+						bs.pointsInSphere(p2, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p2).magnitudeSq) * 2 }
+					})
+					//					bs.pointsInSphere(p, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p).magnitudeSq) }
+				}
+				val triangles = Metaball.parameterise(lattice, { p =>
+
+					doIt(p)
+				})
+				println(s"triangles = ${triangles.length} cells = ${lattice.length}")
+				triangles
+			}
+
+
 			val elapsedMs = System.currentTimeMillis() - start
-			val text = s"Frame[$n] ${(1000.0 / elapsedMs).toInt}fps (${elapsedMs}ms) @${that.length} particles"
+			val text = s"[$frame] ${(1000.0 / elapsedMs).toInt}fps(${elapsedMs}ms) " +
+					   s"@${that.length} particles " +
+					   s"| ${ts.length} triangles " +
+					   s"| ${lattice.length} cell lattice"
 			println(text)
-			render(that)
-			Thread.sleep(500)
+			render(that, ts)
 			Platform.runLater(info.set(text))
 			that
 		}
@@ -262,8 +215,8 @@ object Application extends JFXApp {
 		container,
 		//				ball,
 		new MeshView(mesh) {
-			drawMode = DrawMode.Line
-			material = new PhongMaterial(Color.Red)
+			drawMode = DrawMode.Fill
+			material = new PhongMaterial(Color.rgb(0, 119, 190, 0.95))
 			cullFace = CullFace.None
 
 		},
@@ -284,8 +237,7 @@ object Application extends JFXApp {
 			new StackPane {
 				children = Seq(
 					subScene,
-					new HBox(
-
+					new VBox(
 						new Label("") {
 							text <== iter.asString("Iter(%d):")
 						}, new Slider(1, 30, 3) {
@@ -312,7 +264,10 @@ object Application extends JFXApp {
 				vgrow = Priority.Always
 			},
 			new HBox(new Label() {text <== info},
-				new Button("Animate") {
+				new ToggleButton("Play/Pause") {
+					play <== selected
+				},
+				new Button("Animate container") {
 					onAction = handle {
 						println(tl.getStatus)
 						if (tl.getStatus != Animation.Status.Running.delegate) {
@@ -324,7 +279,26 @@ object Application extends JFXApp {
 				new ToggleButton("Toggle box") {
 					box2.visible <== selected
 					box3.visible <== selected
-				}
+				}, new Button("Export Wavefront OBJ") {
+					onAction = handle {
+						Option(new FileChooser().showSaveDialog(stage)).foreach { f =>
+
+							val vs = mesh.points
+								.grouped(3).map(x => s"v ${x(0)} ${x(1)} ${x(2)}")
+//								.grouped(3).map(x => x.mkString("\n") + "\nf 1 2 3")
+								.mkString("\n")
+							val fs = (1 to mesh.points.size/3).grouped(3).map(x => s"f ${x(0)} ${x(1)} ${x(2)}").mkString("\n")
+
+							val path = f.toPath
+							Files.deleteIfExists(path)
+							Files.writeString(path,
+								s"""g sph_water
+								   |$vs
+								   |$fs""".stripMargin, StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW)
+
+						}
+					}
+				},
 			) {
 				styleClass += "tool-bar"
 				style = "-fx-font-family: 'monospaced'"

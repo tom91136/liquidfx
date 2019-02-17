@@ -155,7 +155,8 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 				//  computed above
 				p.copy(
 					position = a.now * scale,
-					velocity = deltaX *+ (1.0 / dt, p.velocity) * Vd
+					velocity = deltaX *+ (1.0 / dt, p.velocity) * Vd,
+//					neighbours = a.neighbours.map(_.particle)
 				)
 			}
 		}
@@ -180,6 +181,7 @@ object SphSolver {
 						   position: Vec3,
 						   force: Vec3 = Vec3.Zero,
 						   velocity: Vec3 = Vec3.Zero,
+						   neighbours : Seq[Particle[A]] = Nil,
 						  )
 
 	case class Ray(prev: Vec3, origin: Vec3, velocity: Vec3) {
@@ -215,6 +217,7 @@ object SphSolver {
 		@inline def +(amount: Double): Vec3 = Vec3(x + amount, y + amount, z + amount)
 		@inline def *(that: Vec3): Vec3 = Vec3(x * that.x, y * that.y, z * that.z)
 		@inline def *(factor: Double): Vec3 = Vec3(x * factor, y * factor, z * factor)
+		@inline def *:(factor: Double): Vec3 = Vec3(x * factor, y * factor, z * factor)
 		@inline def /(factor: Double): Vec3 = Vec3(x / factor, y / factor, z / factor)
 		@inline def /:(factor: Double): Vec3 = Vec3(factor / x, factor / y, factor / z)
 		@inline def cross(that: Vec3): Vec3 = Vec3(
@@ -248,7 +251,7 @@ object SphSolver {
 		private def clamp(min: Double, max: Double, v: Double) = Math.max(min, Math.min(max, v))
 
 		@inline def length: Double = Math.sqrt(lengthSquared)
-		@inline def lengthSquared: Double = x * x + y * y + z * z
+		@inline def lengthSquared: Double = Math.fma(x, x, Math.fma(y,y, z*z )) //  x * x + y * y + z * z
 		@inline def magnitude: Double = length
 		@inline def magnitudeSq: Double = lengthSquared
 
