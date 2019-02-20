@@ -24,6 +24,7 @@ import scalafx.util.Duration
 
 object Application extends JFXApp {
 
+	val surface = BooleanProperty(true)
 	val play    = BooleanProperty(true)
 	val info    = StringProperty("")
 	val iter    = IntegerProperty(5)
@@ -40,11 +41,17 @@ object Application extends JFXApp {
 	}
 
 
-	def render(xs: Seq[Particle[Sphere]], ts: Seq[Triangle]) = {
+
+	def renderSurface(ts: Seq[Triangle]) = {
+		Platform.runLater {
+			updateMesh(mesh, ts)
+		}
+	}
+
+	def renderParticles(xs: Seq[Particle[Sphere]]) = {
 
 		def clamp(min: Double, max: Double, value: Double) = Math.max(min, Math.min(max, value))
 		Platform.runLater {
-			updateMesh(mesh, ts)
 			xs.foreach { p =>
 				p.a.translateX = p.position.x
 				p.a.translateY = p.position.y
@@ -67,7 +74,7 @@ object Application extends JFXApp {
 	}, position = Vec3(x.toFloat, y.toFloat - 200, z.toFloat))).toArray
 
 
-	render(xs, Nil)
+	renderParticles(xs)
 
 	val ball = new Sphere(120) {
 		drawMode = DrawMode.Line
@@ -135,7 +142,7 @@ object Application extends JFXApp {
 		}
 
 
-		val gs = 10
+		val gs = 8
 		val xsc = 1000.0
 		val ysc = 500.0
 		val zsc = 500.0
@@ -160,40 +167,47 @@ object Application extends JFXApp {
 					constantForce = { p: Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
 			}
 
-			val ts = time("mc") {
+			val tCount = if(surface.value){
+				val ts = time("mc") {
 
-				val bs = time("mc - octree") {
-					val xx = MutableUnsafeOctree[Vec3](Vec3.Zero, 500)(identity)
-					that.foreach(x => xx.insertPoint(x.position))
-					xx
-				}
+					val bs = time("mc - octree") {
+						val xx = MutableUnsafeOctree[Vec3](Vec3.Zero, 500)(identity)
+						that.foreach(x => xx.insertPoint(x.position))
+						xx
+					}
 
-				val rSq = 100.0 * 100.0
+					val rSq = 100.0 * 100.0
 
-				val cc = new ConcurrentHashMap[Vec3, Double]()
+					val cc = new ConcurrentHashMap[Vec3, Double]()
 
-				def doIt(p: Vec3) = {
-					cc.computeIfAbsent(p, p2 => {
-						bs.pointsInSphere(p2, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p2).magnitudeSq) * 2 }
+					def doIt(p: Vec3) = {
+						cc.computeIfAbsent(p, p2 => {
+							bs.pointsInSphere(p2, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p2).magnitudeSq) * 2 }
+						})
+						//					bs.pointsInSphere(p, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p).magnitudeSq) }
+					}
+					val triangles = Metaball.parameterise(lattice, { p =>
+
+						doIt(p)
 					})
-					//					bs.pointsInSphere(p, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p).magnitudeSq) }
+					println(s"triangles = ${triangles.length} cells = ${lattice.length}")
+					triangles
 				}
-				val triangles = Metaball.parameterise(lattice, { p =>
-
-					doIt(p)
-				})
-				println(s"triangles = ${triangles.length} cells = ${lattice.length}")
-				triangles
+				renderSurface(ts)
+				ts.length
+			}else{
+				renderSurface(Nil)
+				0
 			}
 
 
 			val elapsedMs = System.currentTimeMillis() - start
 			val text = s"[$frame] ${(1000.0 / elapsedMs).toInt}fps(${elapsedMs}ms) " +
 					   s"@${that.length} particles " +
-					   s"| ${ts.length} triangles " +
+					   s"| ${tCount} triangles " +
 					   s"| ${lattice.length} cell lattice"
 			println(text)
-			render(that, ts)
+			renderParticles(that)
 			Platform.runLater(info.set(text))
 			that
 		}
@@ -266,6 +280,9 @@ object Application extends JFXApp {
 			new HBox(new Label() {text <== info},
 				new ToggleButton("Play/Pause") {
 					play <== selected
+				},
+				new ToggleButton("Surface") {
+					surface <== selected
 				},
 				new Button("Animate container") {
 					onAction = handle {
