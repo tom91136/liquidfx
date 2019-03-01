@@ -2,7 +2,7 @@ package net.kurobako.liquidfx
 
 import java.util.concurrent.ConcurrentHashMap
 
-import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Vec3}
+import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Response, Vec3}
 
 import scala.collection.parallel.ForkJoinTaskSupport
 import scala.reflect.ClassTag
@@ -47,7 +47,7 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 				   iteration: Int,
 				   constantForce: Particle[A] => Vec3 = { p: Particle[A] => Vec3(0d, p.mass * 9.8, 0d) })
 				  (ps: Array[Particle[A]],
-				   obs: Seq[Ray => Vec3]): Array[Particle[A]] = {
+				   obs: Seq[Ray => Response]): Array[Particle[A]] = {
 
 
 		class Atom(val particle: Particle[A],
@@ -56,16 +56,17 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 				   var lambda: Double = 0,
 				   var deltaP: Vec3 = Vec3.Zero,
 				   var omega: Vec3 = Vec3.Zero,
+				   var velocity: Vec3 = Vec3.Zero
 				  )
 
 		def applyForces(xs: Seq[Particle[A]]) = xs.par.map { p =>
 			val f = constantForce(p)
 			val that = p.copy(
-				force = f,
 				velocity = f *+ (dt, p.velocity) // apply external force (constant in this case)
 			)
 			new Atom(
 				particle = that,
+				velocity = that.velocity,
 				now = that.velocity *+ (dt, that.position / scale)) // predict position
 		}.seq
 
@@ -96,6 +97,7 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 			//			val rho = init
 
 
+
 			// foldLeft 23%
 			val rho = a.neighbours.foldLeft(0d)((acc, b) => acc + b.particle.mass * poly6Kernel(a.now distance b.now))
 
@@ -106,6 +108,8 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 
 
 			val C = rho / Rho - 1.0
+
+			println(a.particle.a + "->"+ C + " " + a.neighbours.map(_.particle.a).toList)
 			a.lambda = -C / (norm2 + CfmEpsilon)
 		}
 
@@ -119,8 +123,14 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 			}
 		}
 
-		def solveCollisionAndUpdate(xs: Seq[Atom]): Unit = xs.par.foreach { a =>
-			a.now = obs.foldLeft((a.now + a.deltaP) * scale)((acc, f) => f(Ray(a.particle.position, acc, a.particle.velocity))) / scale
+		def solveCollisionAndUpdate(xs: Seq[Atom]): Unit = xs. foreach { a =>
+			val current = Response((a.now + a.deltaP) * scale, a.velocity )
+			val res = obs.foldLeft(current) { case (Response(pos, vel), f) => f(Ray(a.particle.position, pos, vel)) }
+			a.now = res.position / scale
+			a.velocity = res.velocity
+
+			println(s"\tP(${a.particle.a} ${a.lambda}  ${a.deltaP} ${a.now * scale} ${a.velocity* scale})")
+
 		}
 
 
@@ -129,8 +139,8 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 
 			// TODO has no effect?
 			def XSPHViscosityVelocity(a: Atom): Vec3 = {
-				a.neighbours.foldLeft(a.particle.velocity) { (acc, b) =>
-					(b.particle.velocity - a.particle.velocity) *+
+				a.neighbours.foldLeft(a.velocity) { (acc, b) =>
+					(b.velocity - a.velocity) *+
 					(C * poly6Kernel(a.now distance b.now), acc)
 				}
 			}
@@ -138,25 +148,24 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 			// FIXME
 			def vorticityConfinementVelocity(a: Atom): Vec3 = {
 				a.omega = xs.foldLeft(Vec3.Zero) { (acc, b) =>
-					acc + (b.particle.velocity - a.particle.velocity cross
+					acc + (b.velocity - a.velocity cross
 						   spikyKernelGradient(a.now, b.now))
 				}
 				val eta = xs.foldLeft(Vec3.Zero) { (acc, b) => spikyKernelGradient(a.now, b.now) *+ (a.omega.length, acc) }
 				// normalise?
 				val N = eta * (1.0 / eta.length)
-				val v = (N cross a.omega) * VorticityEpsilon *+ (dt, a.particle.velocity)
+				val v = (N cross a.omega) * VorticityEpsilon *+ (dt, a.velocity)
 				v
 			}
 
 			xs.par.map { a =>
-				val p = a.particle
-				val deltaX = a.now - p.position / scale
+				val deltaX = a.now - a.particle.position / scale
 				// TODO  apply vorticity confinement and XSPH viscosity using the delta
 				//  computed above
-				p.copy(
+				a.particle.copy(
 					position = a.now * scale,
-					velocity = deltaX *+ (1.0 / dt, p.velocity) * Vd,
-//					neighbours = a.neighbours.map(_.particle)
+					velocity = deltaX *+ (1.0 / dt, a.velocity) * Vd,
+					//					neighbours = a.neighbours.map(_.particle)
 				)
 			}
 		}
@@ -164,7 +173,8 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 		val atoms = applyForces(ps)
 		findNeighbour(atoms)
 		// hotspot 90%
-		for (_ <- 0 until iteration) {
+		for (i <- 0 until iteration) {
+			println(s"@$i")
 			solveLambda(atoms)
 			solveDeltaP(atoms)
 			solveCollisionAndUpdate(atoms)
@@ -179,13 +189,13 @@ object SphSolver {
 	case class Particle[A](a: A,
 						   mass: Double = 1,
 						   position: Vec3,
-						   force: Vec3 = Vec3.Zero,
 						   velocity: Vec3 = Vec3.Zero,
-						   neighbours : Seq[Particle[A]] = Nil,
+						   neighbours: Seq[Particle[A]] = Nil,
 						  )
 
-	case class Ray(prev: Vec3, origin: Vec3, velocity: Vec3) {
-	}
+	case class Ray(prev: Vec3, origin: Vec3, velocity: Vec3) {}
+
+	case class Response(position: Vec3, velocity: Vec3)
 
 
 	object Vec3 {
@@ -251,7 +261,7 @@ object SphSolver {
 		private def clamp(min: Double, max: Double, v: Double) = Math.max(min, Math.min(max, v))
 
 		@inline def length: Double = Math.sqrt(lengthSquared)
-		@inline def lengthSquared: Double = Math.fma(x, x, Math.fma(y,y, z*z )) //  x * x + y * y + z * z
+		@inline def lengthSquared: Double = Math.fma(x, x, Math.fma(y, y, z * z)) //  x * x + y * y + z * z
 		@inline def magnitude: Double = length
 		@inline def magnitudeSq: Double = lengthSquared
 

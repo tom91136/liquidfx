@@ -1,38 +1,27 @@
 package net.kurobako.liquidfx
 
-import net.kurobako.liquidfx.SphSolver.Vec3
+import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Response, Vec3}
 
 
-object Check extends App{
+object Check extends App {
 
 
-	import com.thoughtworks.compute.gpu._
+	val ps = Array.tabulate(10)(i => Particle(i, position = Vec3(i * 10, i * 10, i * 10)))
+
+	val cf = { p: Particle[Int] => Vec3(0, p.mass * 9.8, 0) }
+
+	val solver = new SphSolver(0.1, 500)
 
 
+	val solved = (0 until 5).foldLeft(ps) { (acc, _) =>
+		solver.advance[Int](iteration = 5, constantForce = cf)(acc, { r: Ray => Response(r.origin.clamp(0, 500, 0, 500, 0, 500), r.velocity) } :: Nil)
+	}
 
+	def showVec(v : Vec3) = {
+		s"glm::vec3(${v.x.formatted("%.3f")}, ${v.y.formatted("%.3f")}, ${v.z.formatted("%.3f")})"
+	}
 
-	val as: Tensor = Tensor(Array(
-		Vec3.One.array[Float](_.toFloat),
-		Vec3.One.array[Float](_.toFloat),
-		Vec3.One.array[Float](_.toFloat),
-		Vec3.One.array[Float](_.toFloat),
-	))
+	println(solved.map(p => s"Particle(${p.a}, ${p.mass}, ${showVec(p.position)}, ${showVec(p.velocity)})").mkString("\n"))
 
-
-	val bs: Tensor = Tensor(Array(
-		(Vec3.One * 2).array[Float](_.toFloat),
-		(Vec3.One * 2).array[Float](_.toFloat),
-		(Vec3.One * 2).array[Float](_.toFloat),
-		(Vec3.One * 2).array[Float](_.toFloat),
-	))
-
-
-
-
-
-	val plus100 = as + bs// Tensor.fill(100.0f, Array(2, 3))
-
-	println(plus100) // Output [[101.0,102.0,103.0],[104.0,105.0,106.0]]
-	println(Tensor.min(as, bs)) // Output [[101.0,102.0,103.0],[104.0,105.0,106.0]]
 
 }

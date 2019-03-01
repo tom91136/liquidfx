@@ -1,28 +1,33 @@
 package net.kurobako.liquidfx
 
+import java.util.{Timer, TimerTask}
+
 import net.kurobako.liquidfx.Metaball.Triangle
-import net.kurobako.liquidfx.SphSolver.{Ray, Vec3}
+import net.kurobako.liquidfx.SphSolver.{Ray, Response, Vec3}
 import scalafx.scene.Node
 import scalafx.scene.shape.{Box, Sphere, TriangleMesh}
 import cats._
 import cats.implicits._
+import scalafx.application.Platform
+import scalafx.scene.paint.{Color, PhongMaterial}
 
 object Colliders {
 
 	def nodePos(n: Node) = Vec3(n.getTranslateX, n.getTranslateY, n.getTranslateZ)
 
-	def concaveBoxCollider(b: Box): Ray => Vec3 = { r =>
+	def concaveBoxCollider(b: Box): Ray => Response = { r =>
 		val origin = nodePos(b)
 		val dim = Vec3(b.getWidth, b.getHeight, b.getDepth) / 2
 		val min = origin - dim
 		val max = origin + dim
-		r.origin.clamp(
+		Response(r.origin.clamp(
 			min.x, max.x,
 			min.y, max.y,
-			min.z, max.z)
+			min.z, max.z), r.velocity)
+
 	}
 
-	def convexBoxCollider(b: Box): Ray => Vec3 = {
+	def convexBoxCollider(b: Box): Ray => Response = {
 		case Ray(prev, origin, vv) => if (b.isVisible) {
 			val vel = vv.normalise
 			val pos = nodePos(b)
@@ -55,105 +60,129 @@ object Colliders {
 
 			if (t8 < 0 || t7 > t8) {
 				// no intersection
-				origin
+				Response(origin, vv)
 			} else {
 
-				if (t7 < 0) prev
+				if (t7 < 0) Response(prev, vv)
 				else
-					origin // - (origin distance prev)
+					Response(origin, vv) // - (origin distance prev)
 			}
-		} else origin
+		} else Response(origin, vv)
 	}
 
-	def convexMeshCollider(b: TriangleMesh): Ray => Vec3 = { r =>
+	var cache: Array[Vec3] = _
 
-		val Ray(_, orig, dir) = r
 
-		def collideTriangle(triangle: Triangle): Option[Vec3] = {
-			val Triangle(v0, v1, v2) = triangle
+	val g     = new scalafx.scene.Group()
+	val timer = new Timer()
+
+	def convexMeshCollider(b: TriangleMesh): Ray => Response = { r =>
+
+		val Ray(prev, rayOrigin, rv) = r
+
+
+		val rayVector = rv// .normalise
+
+
+		def collideTriangle(vertex0: Vec3, vertex1: Vec3, vectex2: Vec3): Option[Vec3] = {
 			// compute plane's normal
-			val v0v1 = v1 - v0
-			val v0v2 = v2 - v0
+			val edge1 = vertex1 - vertex0
+			val edge2 = vectex2 - vertex0
 			// no need to normalize
-			val N = v0v1 cross v0v2; // N
-			val area2 = N.length
+			val h = rayVector cross edge2; // N
+			val a = edge1 dot h
 
-			val NdotRayDirection = N.dot(dir)
-
-			if (NdotRayDirection.abs < 0.00001) // almost 0
+			if (a.abs < 0.000001) // almost 0
 				return None; // they are parallel so they don't intersect !
 
-			// compute d parameter using equation 2
-			val d = N dot v0
 
-			// compute t (equation 3)
-			val t = ((N dot orig) + d) / NdotRayDirection
-			// check if the triangle is in behind the ray
-			if (t < 0) return None // the triangle is behind
+			val f = 1.0 / a
+			val s = rayOrigin - vertex0
+			val u = f * (s dot h)
+			if (u < 0.0 || u > 1.0) return None
 
-			// compute the intersection point using equation 1
-			val P = orig + t *: dir
+			val q = s cross edge1
+			val v = f * (rayVector dot q)
+			if (v < 0.0 || v > 1.0) return None
 
-			// Step 2: inside-outside test
-			// C is the vector perpendicular to triangle's plane
+			val t = f * (edge2 dot q)
 
-			// edge 0
-			val edge0 = v1 - v0
-			val vp0 = P - v0
-			if (N.dot(edge0 cross vp0) < 0) return None // P is on the right side
+			if (t < 0.000001) return None
+			if(t > 5) return None
 
-			// edge 1
-			val edge1 = v2 - v1
-			val vp1 = P - v1
-			if (N.dot(edge1 cross vp1) < 0) return None // P is on the right side
 
-			// edge 2
-			val edge2 = v0 - v2
-			val vp2 = P - v2
-			if (N.dot(edge2 cross vp2) < 0) return None // P is on the right side;
+//			Some(prev)
+			val vec = rayOrigin + (rayVector * (t))
+			println(vec.distance(rayOrigin) + " t = "+ t)
+			Some(prev)
+//			Some(rayOrigin )
 
-			Some(P) // this ray hits the triangle
+		}
+		if (cache == null) {
+			cache = b.points
+				.grouped(3).map(g => Vec3(g(0), g(1), g(2))).toArray
 		}
 
-
-		val s = b.points
-			.grouped(3).map(g => Vec3(g(0), g(1), g(2)))
-			.grouped(3).map(v => Triangle(v(0), v(1), v(2)))
-			.toList.collectFirstSome(collideTriangle(_))
-
-		s.getOrElse(orig)
-	}
-
-	def convexSphereCollider(b: Sphere): Ray => Vec3 = {
-		case Ray(prev, origin, vec) =>
-			val centre = Vec3(b.getTranslateX, b.getTranslateY, b.getTranslateZ)
-			val r = b.getRadius
-			val radius2 = r * r
+		val s = cache
+			.grouped(3).map(v => collideTriangle(v(0), v(1), v(2)))
+			.find(_.isDefined).flatten
+		//		println(s)
 
 
-			val dir = vec.normalise
+		s.foreach { v =>
 
-			val L = centre - origin
-			val tca = L dot dir
-			val d2 = (L dot L) - tca * tca
-
-			if (d2 > radius2) { // no change
-				origin
-			} else {
-				val thc = Math.sqrt(radius2 - d2)
-				val t0 = tca - thc
-				val t1 = tca + thc
-				if (t0 < 0 && t1 < 0) {
-					origin
-				} else {
-					val s = t0 min t1
-					val b = t0 max t1
-					val t = if (s < 0) b else s
-					println(t)
-					origin + (dir * (t / 500))
-				}
+			val s = new Sphere(5) {
+				material = new PhongMaterial(Color.Red)
+				translateX = v.x
+				translateY = v.y
+				translateZ = v.z
+			}.delegate
+			Platform.runLater {
+				g.children.add(s)
 			}
+
+			timer.schedule(new TimerTask {
+				override def run(): Unit = Platform.runLater {
+					g.children.remove(s)
+				}
+			}, 10000)
+
+		}
+		//		orig
+		s.map(x => Response(x, rayVector))
+			.getOrElse(Response(rayOrigin, rayVector))
 	}
+
+//	def convexSphereCollider(b: Sphere): Ray => Vec3 = {
+//		case Ray(prev, origin, vec) =>
+//			val centre = Vec3(b.getTranslateX, b.getTranslateY, b.getTranslateZ)
+//			val r = b.getRadius
+//			val radius2 = r * r
+//
+//
+//			val dir = vec.normalise
+//
+//			val L = centre - origin
+//			val tca = L dot dir
+//			val d2 = (L dot L) - tca * tca
+//
+//			if (d2 > radius2) { // no change
+//				origin
+//			} else {
+//				val thc = Math.sqrt(radius2 - d2)
+//				val t0 = tca - thc
+//				val t1 = tca + thc
+//				if (t0 < 0 && t1 < 0) {
+//					origin
+//				} else {
+//					val s = t0 min t1
+//					val b = t0 max t1
+//					val t = if (s < 0) b else s
+//					println(t)
+//					origin + (dir * (t / 500))
+//				}
+//			}
+//	}
 
 
 }

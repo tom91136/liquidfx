@@ -5,6 +5,8 @@ import java.nio.file.{Files, OpenOption, StandardOpenOption}
 import java.util.concurrent.ConcurrentHashMap
 
 import cats.implicits._
+import com.google.common.io.Resources
+import com.javafx.experiments.importers.Importer3D
 import javafx.animation.Interpolator
 import net.kurobako.liquidfx.Metaball.Triangle
 import net.kurobako.liquidfx.SphSolver.{Particle, Vec3}
@@ -57,17 +59,17 @@ object Application extends JFXApp {
 				p.a.translateY = p.position.y
 				p.a.translateZ = p.position.z
 				val v = clamp(120, 255, p.velocity.lengthSquared * 100).toInt
-				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, 0.2))
+				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, 0.8))
 
 			}
 		}
 	}
 
 
-	val r   = 8
+	val r   =10
 	val div = r / 2
 	val xs  = (for {
-		x <- 0 to 80 by r
+		x <- 0 to 40 by r
 		y <- 0 to 100 by r
 		z <- 0 to 100 by r
 	} yield Particle(a = new Sphere(r * 0.85) {
@@ -82,27 +84,46 @@ object Application extends JFXApp {
 	}
 
 	val box2 = new Box(20, 320, 420) {
-		drawMode = DrawMode.Fill
+		drawMode = DrawMode.Line
 		translateX = -120
-		translateY = 100
+		translateY = 50
 		translateZ = -120
 	}
 
 
 	val box3 = new Box(120, 320, 420) {
-		drawMode = DrawMode.Fill
+		drawMode = DrawMode.Line
 		translateX = 120
-		translateY = 100
+		translateY = 50
 		translateZ = 100
 	}
 
 
-	val container = new Box(800, 500, 370) {
+	val container = new Box(500, 500, 370) {
 		drawMode = DrawMode.Line
+		translateY = -200
 		//		material = new PhongMaterial(Color.WhiteSmoke.opacity(0.2))
 	}
 
 	val mesh = new TriangleMesh()
+
+
+	val bunny = Importer3D.load(Resources.getResource("l_bunny.obj").toExternalForm)
+	//	bunny.scaleX = 100
+	//	bunny.scaleY = 100
+	//	bunny.scaleZ = 100
+	println(bunny.getClass)
+
+
+	val mv =  bunny.asInstanceOf[javafx.scene.Group]
+		.getChildren.get(0).asInstanceOf[javafx.scene.shape.MeshView]
+
+	val bunnyMesh = mv
+		.getMesh.asInstanceOf[javafx.scene.shape.TriangleMesh]
+
+	mv.setDrawMode(DrawMode.Line)
+
+	println(bunnyMesh)
 
 
 	val quadDecel = new Interpolator {
@@ -126,6 +147,7 @@ object Application extends JFXApp {
 
 		val solver = new SphSolver(scale = 550d)
 		val obstacles = Array(
+			Colliders.convexMeshCollider(bunnyMesh),
 			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
 			Colliders.convexBoxCollider(box2),
@@ -234,8 +256,11 @@ object Application extends JFXApp {
 			cullFace = CullFace.None
 
 		},
+		Colliders.g,
 		box2,
 		box3,
+		bunny,
+
 		//				plane,
 		//				box,
 	) {
