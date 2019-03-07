@@ -3,6 +3,7 @@ package net.kurobako.liquidfx
 import java.util.concurrent.ConcurrentHashMap
 
 import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Response, Vec3}
+import scalafx.geometry.Point3D
 
 import scala.collection.parallel.ForkJoinTaskSupport
 import scala.reflect.ClassTag
@@ -97,7 +98,6 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 			//			val rho = init
 
 
-
 			// foldLeft 23%
 			val rho = a.neighbours.foldLeft(0d)((acc, b) => acc + b.particle.mass * poly6Kernel(a.now distance b.now))
 
@@ -109,7 +109,7 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 
 			val C = rho / Rho - 1.0
 
-			println(a.particle.a + "->"+ C + " " + a.neighbours.map(_.particle.a).toList)
+			//			println(a.particle.a + "->"+ C + " " + a.neighbours.map(_.particle.a).toList)
 			a.lambda = -C / (norm2 + CfmEpsilon)
 		}
 
@@ -123,13 +123,13 @@ class SphSolver(val h: Double = 0.1, // Particle(smoothing kernel) size
 			}
 		}
 
-		def solveCollisionAndUpdate(xs: Seq[Atom]): Unit = xs. foreach { a =>
-			val current = Response((a.now + a.deltaP) * scale, a.velocity )
+		def solveCollisionAndUpdate(xs: Seq[Atom]): Unit = xs.par.foreach { a =>
+			val current = Response((a.now + a.deltaP) * scale, a.velocity)
 			val res = obs.foldLeft(current) { case (Response(pos, vel), f) => f(Ray(a.particle.position, pos, vel)) }
 			a.now = res.position / scale
 			a.velocity = res.velocity
 
-			println(s"\tP(${a.particle.a} ${a.lambda}  ${a.deltaP} ${a.now * scale} ${a.velocity* scale})")
+			//			println(s"\tP(${a.particle.a} ${a.lambda}  ${a.deltaP} ${a.now * scale} ${a.velocity* scale})")
 
 		}
 
@@ -199,12 +199,25 @@ object SphSolver {
 
 
 	object Vec3 {
+		def apply(v : Point3D): Vec3 = Vec3(v.x, v.y, v.z)
+
 		def apply(v: Double): Vec3 = Vec3(v, v, v)
 		final val NegativeOne = Vec3(-1d)
 		final val One         = Vec3(1d)
 		final val Zero        = Vec3(0d)
 	}
+
+	case class Mat3(
+					   a: Double, b: Double, c: Double,
+					   d: Double, e: Double, f: Double,
+					   g: Double, h: Double, i: Double) {
+		def det: Double = (a * e * i) + (b * f * g) + (c * d * h) -
+						  (c * e * g) - (b * d * i) - (a * f * h)
+	}
+
 	case class Vec3(x: Double, y: Double, z: Double) {
+
+		def p3d: Point3D = new Point3D(x, y, z)
 
 		@inline def u: Double = x
 		@inline def v: Double = y
@@ -261,7 +274,7 @@ object SphSolver {
 		private def clamp(min: Double, max: Double, v: Double) = Math.max(min, Math.min(max, v))
 
 		@inline def length: Double = Math.sqrt(lengthSquared)
-		@inline def lengthSquared: Double = Math.fma(x, x, Math.fma(y, y, z * z)) //  x * x + y * y + z * z
+		@inline def lengthSquared: Double =  x * x + y * y + z * z
 		@inline def magnitude: Double = length
 		@inline def magnitudeSq: Double = lengthSquared
 

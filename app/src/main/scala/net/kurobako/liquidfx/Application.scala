@@ -29,7 +29,7 @@ object Application extends JFXApp {
 	val surface = BooleanProperty(true)
 	val play    = BooleanProperty(true)
 	val info    = StringProperty("")
-	val iter    = IntegerProperty(5)
+	val iter    = IntegerProperty(1)
 	val gravity = DoubleProperty(9.8)
 	val deltaT  = DoubleProperty(1)
 
@@ -43,6 +43,24 @@ object Application extends JFXApp {
 	}
 
 
+	val slope = new TriangleMesh() {}
+	val slopeView = new MeshView(slope){
+		drawMode = DrawMode.Fill
+		material = new PhongMaterial(Color.rgb(0, 100, 100, 0.5))
+		depthTest = DepthTest.Enable
+		cullFace = CullFace.None
+
+	}
+
+	val Yoff = -300
+	val Zoff = -200
+	val Xoff = 200
+
+	updateMesh(slope, Triangle(
+		Vec3(0 + Xoff, 100 + Yoff, 0 + Zoff),
+		Vec3(0 + Xoff, 100 + Yoff, 300 + Zoff),
+		Vec3(300 + Xoff, 700 + Yoff, 150 + Zoff),
+	) :: Nil)
 
 	def renderSurface(ts: Seq[Triangle]) = {
 		Platform.runLater {
@@ -59,24 +77,23 @@ object Application extends JFXApp {
 				p.a.translateY = p.position.y
 				p.a.translateZ = p.position.z
 				val v = clamp(120, 255, p.velocity.lengthSquared * 100).toInt
-				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, 0.8))
+				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, 0.6))
 
 			}
 		}
 	}
 
 
-	val r   =10
+	val r   = 8
 	val div = r / 2
 	val xs  = (for {
-		x <- 0 to 40 by r
+		x <- 0 to 100 by r
 		y <- 0 to 100 by r
 		z <- 0 to 100 by r
-	} yield Particle(a = new Sphere(r * 0.85) {
-	}, position = Vec3(x.toFloat, y.toFloat - 200, z.toFloat))).toArray
+	} yield Particle(a = new Sphere(r * 0.65) {
+		depthTest = DepthTest.Enable
+	}, position = Vec3(x.toFloat + 100, y.toFloat - 200, z.toFloat))).toArray
 
-
-	renderParticles(xs)
 
 	val ball = new Sphere(120) {
 		drawMode = DrawMode.Line
@@ -86,7 +103,7 @@ object Application extends JFXApp {
 	val box2 = new Box(20, 320, 420) {
 		drawMode = DrawMode.Line
 		translateX = -120
-		translateY = 50
+		translateY = 0
 		translateZ = -120
 	}
 
@@ -94,14 +111,17 @@ object Application extends JFXApp {
 	val box3 = new Box(120, 320, 420) {
 		drawMode = DrawMode.Line
 		translateX = 120
-		translateY = 50
+		translateY = 0
 		translateZ = 100
 	}
 
 
-	val container = new Box(500, 500, 370) {
+	val container = new Box(500, 500, 180) {
 		drawMode = DrawMode.Line
-		translateY = -200
+		translateX = 0//250
+
+		translateY = -350
+		translateZ = -30
 		//		material = new PhongMaterial(Color.WhiteSmoke.opacity(0.2))
 	}
 
@@ -115,13 +135,16 @@ object Application extends JFXApp {
 	println(bunny.getClass)
 
 
-	val mv =  bunny.asInstanceOf[javafx.scene.Group]
+	val mv = bunny.asInstanceOf[javafx.scene.Group]
 		.getChildren.get(0).asInstanceOf[javafx.scene.shape.MeshView]
+	mv.scaleX = 2
 
 	val bunnyMesh = mv
 		.getMesh.asInstanceOf[javafx.scene.shape.TriangleMesh]
 
-	mv.setDrawMode(DrawMode.Line)
+	mv.setDrawMode(DrawMode.Fill)
+	mv.material = new PhongMaterial(Color.rgb(0, 100, 0, 0.3))
+	mv.depthTest = DepthTest.Enable
 
 	println(bunnyMesh)
 
@@ -132,7 +155,8 @@ object Application extends JFXApp {
 
 
 	val tl = new Timeline(30, KeyFrame(Duration(2000), values = Set(
-		KeyValue(container.translateX, 220),
+		KeyValue(container.translateX, 0),
+		KeyValue(container.translateX, 500),
 		//					KeyValue(translateY, -200),
 		//		KeyValue(container.translateZ, 200),
 	))) {
@@ -145,9 +169,10 @@ object Application extends JFXApp {
 	new Thread(() => {
 
 
-		val solver = new SphSolver(scale = 550d)
+		val solver = new SphSolver(scale = 300d)
 		val obstacles = Array(
-			Colliders.convexMeshCollider(bunnyMesh),
+			Colliders.convexMeshCollider(bunnyMesh, mv),
+//			Colliders.convexMeshCollider(slope),
 			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
 			Colliders.convexBoxCollider(box2),
@@ -189,7 +214,7 @@ object Application extends JFXApp {
 					constantForce = { p: Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
 			}
 
-			val tCount = if(surface.value){
+			val tCount = if (surface.value) {
 				val ts = time("mc") {
 
 					val bs = time("mc - octree") {
@@ -217,7 +242,7 @@ object Application extends JFXApp {
 				}
 				renderSurface(ts)
 				ts.length
-			}else{
+			} else {
 				renderSurface(Nil)
 				0
 			}
@@ -259,12 +284,15 @@ object Application extends JFXApp {
 		Colliders.g,
 		box2,
 		box3,
-		bunny,
 
 		//				plane,
 		//				box,
 	) {
-		children ++= xs.map(_.a.delegate)
+		Platform.runLater {
+			children ++= xs.map(_.a.delegate)
+			children += bunny
+			children += slopeView
+		}
 	}, 500, 500)
 
 
@@ -279,7 +307,7 @@ object Application extends JFXApp {
 					new VBox(
 						new Label("") {
 							text <== iter.asString("Iter(%d):")
-						}, new Slider(1, 30, 3) {
+						}, new Slider(1, 30, 1) {
 							prefWidth = 250
 							iter <== value
 						},
@@ -327,9 +355,9 @@ object Application extends JFXApp {
 
 							val vs = mesh.points
 								.grouped(3).map(x => s"v ${x(0)} ${x(1)} ${x(2)}")
-//								.grouped(3).map(x => x.mkString("\n") + "\nf 1 2 3")
+								//								.grouped(3).map(x => x.mkString("\n") + "\nf 1 2 3")
 								.mkString("\n")
-							val fs = (1 to mesh.points.size/3).grouped(3).map(x => s"f ${x(0)} ${x(1)} ${x(2)}").mkString("\n")
+							val fs = (1 to mesh.points.size / 3).grouped(3).map(x => s"f ${x(0)} ${x(1)} ${x(2)}").mkString("\n")
 
 							val path = f.toPath
 							Files.deleteIfExists(path)

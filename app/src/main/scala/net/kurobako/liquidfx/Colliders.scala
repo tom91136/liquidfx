@@ -3,9 +3,11 @@ package net.kurobako.liquidfx
 import java.util.{Timer, TimerTask}
 
 import net.kurobako.liquidfx.Metaball.Triangle
-import net.kurobako.liquidfx.SphSolver.{Ray, Response, Vec3}
+import net.kurobako.liquidfx.SphSolver.{Mat3, Ray, Response, Vec3}
 import scalafx.scene.Node
-import scalafx.scene.shape.{Box, Sphere, TriangleMesh}
+import scalafx.Includes._
+
+import scalafx.scene.shape.{Box, MeshView, Sphere, TriangleMesh}
 import cats._
 import cats.implicits._
 import scalafx.application.Platform
@@ -70,29 +72,101 @@ object Colliders {
 		} else Response(origin, vv)
 	}
 
-	var cache: Array[Vec3] = _
+	var cache: Array[Triangle] = _
 
 
 	val g     = new scalafx.scene.Group()
 	val timer = new Timer()
 
-	def convexMeshCollider(b: TriangleMesh): Ray => Response = { r =>
+	def convexMeshCollider(b: TriangleMesh, meshView: MeshView): Ray => Response = { r =>
 
 		val Ray(prev, rayOrigin, rv) = r
 
+		val rayVector = rv // .normalise
 
-		val rayVector = rv// .normalise
 
+		//http://blackpawn.com/texts/pointinpoly/default.html
+		def inTrig(triangle: Triangle, P: Vec3) = {
+			val v0 = triangle.c - triangle.a
+			val v1 = triangle.b - triangle.a
+			val v2 = P - triangle.a
+
+			// Compute dot products
+			val dot00 = v0 dot v0
+			val dot01 = v0 dot v1
+			val dot02 = v0 dot v2
+			val dot11 = v1 dot v1
+			val dot12 = v1 dot v2
+
+			// Compute barycentric coordinates
+			val invDenom = 1.0 / (dot00 * dot11 - dot01 * dot01)
+			val u = (dot11 * dot02 - dot01 * dot12) * invDenom
+			val v = (dot00 * dot12 - dot01 * dot02) * invDenom
+
+			// Check if point is in triangle
+			(u >= 0) && (v >= 0) && (u + v < 1)
+		}
+
+
+		def collideTriangle2(unscaled: Triangle, p: Vec3, velocity: Vec3): Option[Response ] = {
+
+
+			val triangle = Triangle(
+				Vec3 (meshView.localToParent(unscaled.v0.x, unscaled.v0.y, unscaled.v0.z)),
+				Vec3 (meshView.localToParent(unscaled.v1.x, unscaled.v1.y, unscaled.v1.z)),
+				Vec3 (meshView.localToParent(unscaled.v2.x, unscaled.v2.y, unscaled.v2.z)),
+			)
+
+
+
+
+			//https://math.stackexchange.com/questions/588871/minimum-distance-between-point-and-face
+			val n = (triangle.v1 - triangle.v0) cross (triangle.v2 - triangle.v0)
+			val nn = n.normalise
+
+
+			val t = (nn dot triangle.v0) - (nn dot p)
+			// p0 = intersection
+			val p0 = p +  (nn * t)
+
+
+			val B_ = triangle.b - triangle.a
+			val C_ = triangle.c - triangle.a
+			val X_ = p - triangle.a
+
+
+//			val side = Mat3(
+//				B_.x, B_.y, B_.z,
+//				C_.x, C_.y, C_.z,
+//				X_.x, X_.y, X_.z,
+//			).det
+
+			if (inTrig(triangle, p0) && p.distance(p0) < 5) {
+
+				//https://math.stackexchange.com/questions/13261/how-to-get-a-reflection-vector
+				val r = velocity - (nn * 2 * (velocity dot nn))
+
+//				println(s"R=$r V=$velocity")
+
+				Some(Response(prev, r)  )
+			} else {
+				None
+			}
+		}
 
 		def collideTriangle(vertex0: Vec3, vertex1: Vec3, vectex2: Vec3): Option[Vec3] = {
-			// compute plane's normal
 			val edge1 = vertex1 - vertex0
 			val edge2 = vectex2 - vertex0
+
+
+			val C = edge1.cross(edge2)
+
+
 			// no need to normalize
 			val h = rayVector cross edge2; // N
 			val a = edge1 dot h
 
-			if (a.abs < 0.000001) // almost 0
+			if (a.abs < 0.00000001) // almost 0
 				return None; // they are parallel so they don't intersect !
 
 
@@ -107,82 +181,107 @@ object Colliders {
 
 			val t = f * (edge2 dot q)
 
-			if (t < 0.000001) return None
-			if(t > 5) return None
+			if (t < 0.00000001) return None
+
+			if (t > 2) return None
 
 
-//			Some(prev)
+			//			Some(prev)
 			val vec = rayOrigin + (rayVector * (t))
-			println(vec.distance(rayOrigin) + " t = "+ t)
-			Some(prev)
-//			Some(rayOrigin )
+			//			println(vec.distance(rayOrigin) + " t = "+ t)
+			//			Some(vec)
+			Some(vec)
 
 		}
 		if (cache == null) {
 			cache = b.points
-				.grouped(3).map(g => Vec3(g(0), g(1), g(2))).toArray
+				.grouped(3).map(g => Vec3(g(0), g(1), g(2)))
+				.grouped(3).map(xs => Triangle(xs(0), xs(1), xs(2))).toArray
 		}
 
+		//		val s = cache.view
+		//			 .map(v => collideTriangle(v.a, v.b, v.c))
+		//			.find(_.isDefined).flatten
+
 		val s = cache
-			.grouped(3).map(v => collideTriangle(v(0), v(1), v(2)))
+			.map(v => collideTriangle2(v, rayOrigin, rayVector))
 			.find(_.isDefined).flatten
+
+		//		val s = cache
+		//		 .find(v => inTrig(v.a,v.b, v.c, rayOrigin)).map(x => rayOrigin)
+
+
 		//		println(s)
 
 
-		s.foreach { v =>
+//		s.foreach { case (Response(v, rr), c) =>
+//
+//			val s = new Sphere(2) {
+//				material = new PhongMaterial(c)
+//				translateX = v.x
+//				translateY = v.y
+//				translateZ = v.z
+//			}.delegate
+//
+//			val rs = new Sphere(2) {
+//				material = new PhongMaterial(Color.Green)
+//				translateX = v.x + rr.x * 6
+//				translateY = v.y + rr.y * 6
+//				translateZ = v.z + rr.z * 6
+//			}.delegate
+//			Platform.runLater {
+//				g.children.add(s)
+//				g.children.add(rs)
+//			}
+//
+//			timer.schedule(new TimerTask {
+//				override def run(): Unit = Platform.runLater {
+//					g.children.remove(s)
+//					g.children.remove(rs)
+//				}
+//			}, 1000)
+//
+//		}
 
-			val s = new Sphere(5) {
-				material = new PhongMaterial(Color.Red)
-				translateX = v.x
-				translateY = v.y
-				translateZ = v.z
-			}.delegate
-			Platform.runLater {
-				g.children.add(s)
-			}
 
-			timer.schedule(new TimerTask {
-				override def run(): Unit = Platform.runLater {
-					g.children.remove(s)
-				}
-			}, 10000)
 
-		}
 		//		orig
-		s.map(x => Response(x, rayVector))
+		s.map(x => x )
 			.getOrElse(Response(rayOrigin, rayVector))
+
+
 	}
 
-//	def convexSphereCollider(b: Sphere): Ray => Vec3 = {
-//		case Ray(prev, origin, vec) =>
-//			val centre = Vec3(b.getTranslateX, b.getTranslateY, b.getTranslateZ)
-//			val r = b.getRadius
-//			val radius2 = r * r
-//
-//
-//			val dir = vec.normalise
-//
-//			val L = centre - origin
-//			val tca = L dot dir
-//			val d2 = (L dot L) - tca * tca
-//
-//			if (d2 > radius2) { // no change
-//				origin
-//			} else {
-//				val thc = Math.sqrt(radius2 - d2)
-//				val t0 = tca - thc
-//				val t1 = tca + thc
-//				if (t0 < 0 && t1 < 0) {
-//					origin
-//				} else {
-//					val s = t0 min t1
-//					val b = t0 max t1
-//					val t = if (s < 0) b else s
-//					println(t)
-//					origin + (dir * (t / 500))
-//				}
-//			}
-//	}
+	//	def convexSphereCollider(b: Sphere): Ray => Vec3 = {
+	//		case Ray(prev, origin, vec) =>
+	//			val centre = Vec3(b.getTranslateX, b.getTranslateY, b.getTranslateZ)
+	//			val r = b.getRadius
+	//			val radius2 = r * r
+	//
+	//
+	//			val dir = vec.normalise
+	//
+	//			val L = centre - origin
+	//			val tca = L dot dir
+	//			val d2 = (L dot L) - tca * tca
+	//
+	//			if (d2 > radius2) { // no change
+	//				origin
+	//			} else {
+	//				val thc = Math.sqrt(radius2 - d2)
+	//				val t0 = tca - thc
+	//				val t1 = tca + thc
+	//				if (t0 < 0 && t1 < 0) {
+	//					origin
+	//				} else {
+	//					val s = t0 min t1
+	//					val b = t0 max t1
+	//					val t = if (s < 0) b else s
+	//					println(t)
+	//					origin + (dir * (t / 500))
+	//				}
+	//			}
+	//	}
 
 
 }

@@ -44,6 +44,7 @@ object SceneControl {
 			camera = perspective
 			pickOnBounds = true
 			fill = Color.DarkGray
+			depthTest = DepthTest.Enable
 		}
 		root.transforms += new Translate() {
 			x <== scene.width / 2

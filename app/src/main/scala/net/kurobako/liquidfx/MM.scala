@@ -57,7 +57,7 @@ object MM extends JFXApp {
 		buffer.order(ByteOrder.LITTLE_ENDIAN)
 		while (true) {
 			try {
-				buffer.load()
+//				buffer.load()
 				f(buffer)
 			} catch {
 				case e: Throwable     => e.printStackTrace()

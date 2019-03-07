@@ -320,6 +320,9 @@ object Metaball {
 			b.x, b.y, b.z,
 			c.x, c.y, c.z,
 		)
+		def v0 = a
+		def v1 = b
+		def v2 = c
 	}
 
 	case class GridCell(ps: Array[(Vec3, Double)]) // [8]
