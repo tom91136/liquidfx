@@ -18,6 +18,10 @@ import scalafx.scene.{AmbientLight, Group, Scene}
 object MM extends JFXApp {
 
 
+	case class Entry(name: String, size : Long)
+	case class Structure(fields : Vector[Entry])
+
+
 	val ambient = new AmbientLight(Color.LightYellow)
 
 	val mesh     = new TriangleMesh() {
@@ -101,7 +105,7 @@ object MM extends JFXApp {
 
 
 
-										material = new PhongMaterial(S.interpolate(E, k.toFloat / length))
+										material = new PhongMaterial(S.interpolate(E, k.toFloat / length).opacity(0.2))
 										group.children += this.delegate
 									}
 								})
