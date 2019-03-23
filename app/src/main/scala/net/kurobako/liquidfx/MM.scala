@@ -9,6 +9,7 @@ import net.kurobako.liquidfx.SphSolver.{Particle, Vec3}
 import scalafx.Includes.{handle, _}
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
+import scalafx.beans.property.BooleanProperty
 import scalafx.scene.input.{KeyCode, KeyEvent}
 import scalafx.scene.layout.{Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
@@ -18,8 +19,10 @@ import scalafx.scene.{AmbientLight, Group, Scene}
 object MM extends JFXApp {
 
 
-	case class Entry(name: String, size : Long)
-	case class Structure(fields : Vector[Entry])
+	private val showParticle = BooleanProperty(true)
+
+	case class Entry(name: String, size: Long)
+	case class Structure(fields: Vector[Entry])
 
 
 	val ambient = new AmbientLight(Color.LightYellow)
@@ -61,7 +64,7 @@ object MM extends JFXApp {
 		buffer.order(ByteOrder.LITTLE_ENDIAN)
 		while (true) {
 			try {
-//				buffer.load()
+				//				buffer.load()
 				f(buffer)
 			} catch {
 				case e: Throwable     => e.printStackTrace()
@@ -81,37 +84,39 @@ object MM extends JFXApp {
 		val particles = new ConcurrentHashMap[Long, Sphere]()
 		val S = Color.web("A76D34")
 		val E = Color.White
-		readMmf(Paths.get("/home/tom/libfluid/cmake-build-release/particles.mmf")) {
+		readMmf(Paths.get("/home/tom/libfluid/cmake-build-release/samples/particles.mmf")) {
 			buffer =>
-				Thread.sleep(8)
-				val start = buffer.getLong
-				if (start != last) {
-					last = start
-					time("Particles.mmf") {
-						val length = buffer.getLong.toInt
-						val ys = Array.tabulate(length) { _ =>
-							val t = buffer.getLong
-							val tpe = buffer.getInt
-							val mass = buffer.getFloat
-							val pos = Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat)
-							val vel = Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat)
-							Particle(t, mass, pos, vel)
-						}
+				Thread.sleep((1000.0 / 60).toInt)
+				if (showParticle.value) {
+					val start = buffer.getLong
+					if (start != last) {
+						last = start
+						time("Particles.mmf") {
+							val length = buffer.getLong.toInt
+							val ys = Array.tabulate(length) { _ =>
+								val t = buffer.getLong
+								val tpe = buffer.getInt
+								val mass = buffer.getFloat
+								val pos = Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat)
+								val vel = Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat)
+								Particle(t, mass, false, pos, vel)
+							}
 
-						Platform.runLater {
-							ys.foreach { y =>
-								val sphere = particles.computeIfAbsent(y.a, { k =>
-									new Sphere(10) {
+							Platform.runLater {
+								ys.foreach { y =>
+									val sphere = particles.computeIfAbsent(y.a, { k =>
+										new Sphere(10) {
 
 
-
-										material = new PhongMaterial(S.interpolate(E, k.toFloat / length).opacity(0.2))
-										group.children += this.delegate
-									}
-								})
-								sphere.translateX = y.position.x
-								sphere.translateY = y.position.y
-								sphere.translateZ = y.position.z
+											visible <== showParticle
+											material = new PhongMaterial(S.interpolate(E, k.toFloat / length))
+											group.children += this.delegate
+										}
+									})
+									sphere.translateX = y.position.x
+									sphere.translateY = y.position.y
+									sphere.translateZ = y.position.z
+								}
 							}
 						}
 					}
@@ -121,35 +126,40 @@ object MM extends JFXApp {
 
 	new Thread({ () =>
 		var last = 0L
-		readMmf(Paths.get("/home/tom/libfluid/cmake-build-release/triangles.mmf")) {
+		readMmf(Paths.get("/home/tom/libfluid/cmake-build-release/samples/triangles.mmf")) {
 			buffer =>
 				Thread.sleep(8)
-				val start = buffer.getLong
-				if (start != last) {
-					last = start
-					time("triangles.mmf") {
-						val length = buffer.getLong.toInt
-						//						val ts = Array.tabulate(length) { _ =>
-						//							Triangle(
-						//								Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat),
-						//								Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat),
-						//								Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat))
-						//						}
 
-						val ts = Array.tabulate(length * 9) { _ => buffer.getFloat }
-						def mkFaces(n: Int) = {
-							val faces = Array.ofDim[Int](n * 2)
-							for (i <- 0 until n) faces(i * 2) = i
-							faces
-						}
-						val fs = mkFaces(ts.length / 3)
 
-						Platform.runLater {
-							mesh.points = ts
-							mesh.faces = fs
+
+					val start = buffer.getLong
+					if (start != last) {
+						last = start
+						time("triangles.mmf") {
+							val length = buffer.getLong.toInt
+							//						val ts = Array.tabulate(length) { _ =>
+							//							Triangle(
+							//								Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat),
+							//								Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat),
+							//								Vec3(buffer.getFloat, buffer.getFloat, buffer.getFloat))
+							//						}
+
+							val ts = Array.tabulate(length * 9) { _ => buffer.getFloat }
+							def mkFaces(n: Int) = {
+								val faces = Array.ofDim[Int](n * 2)
+								for (i <- 0 until n) faces(i * 2) = i
+								faces
+							}
+							val fs = mkFaces(ts.length / 3)
+
+							Platform.runLater {
+								mesh.points = ts
+								mesh.faces = fs
+							}
 						}
 					}
-				}
+
+
 		}
 	}).start()
 
@@ -174,6 +184,7 @@ object MM extends JFXApp {
 			onKeyPressed = { e: KeyEvent =>
 				e.code match {
 					case KeyCode.S => meshView.visible = !meshView.visible.value
+					case KeyCode.P => showParticle.value = !showParticle.value
 					case _         =>
 				}
 			}

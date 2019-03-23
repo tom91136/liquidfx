@@ -77,14 +77,23 @@ object Application extends JFXApp {
 				p.a.translateY = p.position.y
 				p.a.translateZ = p.position.z
 				val v = clamp(120, 255, p.velocity.lengthSquared * 100).toInt
-				p.a.material = new PhongMaterial(Color.rgb(v / 2, v / 2, v, 0.6))
+
+				val surface = if(p.surface ) {
+					Color.Red
+				} else  {
+					Color.Blue
+				}
+
+
+				p.a.material = new PhongMaterial(surface)
 
 			}
 		}
 	}
 
 
-	val r   = 8
+	val maxIter = 2000
+	val r   = 7//28
 	val div = r / 2
 	val xs  = (for {
 		x <- 0 to 100 by r
@@ -171,7 +180,7 @@ object Application extends JFXApp {
 
 		val solver = new SphSolver(scale = 300d)
 		val obstacles = Array(
-			Colliders.convexMeshCollider(bunnyMesh, mv),
+//			Colliders.convexMeshCollider(bunnyMesh, mv),
 //			Colliders.convexMeshCollider(slope),
 			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
@@ -204,7 +213,7 @@ object Application extends JFXApp {
 		}
 
 
-		(0 to Int.MaxValue).foldLeft(xs) { (acc, frame) =>
+		(0 to maxIter).foldLeft(xs) { (acc, frame) =>
 
 			val start = System.currentTimeMillis()
 			val that = time("solve") {
@@ -307,7 +316,7 @@ object Application extends JFXApp {
 					new VBox(
 						new Label("") {
 							text <== iter.asString("Iter(%d):")
-						}, new Slider(1, 30, 1) {
+						}, new Slider(1, 30, 3) {
 							prefWidth = 250
 							iter <== value
 						},
