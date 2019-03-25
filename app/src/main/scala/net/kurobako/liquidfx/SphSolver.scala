@@ -371,6 +371,8 @@ object SphSolver {
 						  (c * e * g) - (b * d * i) - (a * f * h)
 	}
 
+
+
 	case class Vec3(x: Double, y: Double, z: Double) {
 
 		def p3d: Point3D = new Point3D(x, y, z)
