@@ -6,11 +6,13 @@ import java.util.concurrent.ConcurrentHashMap
 
 import better.files._
 import net.kurobako.liquidfx.Metaball.Triangle
+import net.kurobako.liquidfx.SphSolver.Vec3
 import net.kurobako.liquidfx.StructDefs._
 import scalafx.Includes.{handle, _}
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
 import scalafx.beans.property.BooleanProperty
+import scalafx.geometry.Point3D
 import scalafx.scene.input.{KeyCode, KeyEvent}
 import scalafx.scene.layout.{Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
@@ -47,6 +49,7 @@ object MM extends JFXApp {
 		cullFace = CullFace.None
 	}
 
+
 	def updateMesh(mesh: TriangleMesh, xs: Seq[Triangle]) = {
 		mesh.points = xs.flatMap(_.points).map(_.toFloat).toArray
 		mesh.faces = Array.tabulate(xs.length * 3)(i => i -> 0).flatMap { case (l, r) => Array(l, r) }
@@ -56,6 +59,21 @@ object MM extends JFXApp {
 		SceneControl.mkAxis(),
 		meshView,
 	)
+
+
+	def openMmf(path: File): ByteBuffer = {
+		import java.nio.channels.FileChannel
+		path.createFileIfNotExists()
+		val maxMMF = 16 * 4 * 50000
+		path.writeByteArray(Array.ofDim(maxMMF))
+		println(s"collider = ${path.size.toFloat / 1024 / 1024}MB")
+		val filechannel = FileChannel.open(path.path,
+			StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE, StandardOpenOption.READ)
+		val buffer = filechannel.map(FileChannel.MapMode.READ_WRITE, 0, maxMMF)
+		buffer.order(ByteOrder.LITTLE_ENDIAN)
+		buffer.clear()
+		buffer
+	}
 
 
 	def readMmf(path: File)(f: ByteBuffer => Unit) = {
@@ -129,16 +147,42 @@ object MM extends JFXApp {
 		headerDef <- StructDefs.readStructDef[Header](BasePath / "header.json")
 		trianglesDef <- StructDefs.readStructDef[Triangles](BasePath / "triangle.json")
 		particlesDef <- StructDefs.readStructDef[Particles](BasePath / "particle.json")
-		headerReader <- Header(headerDef)
-		trianglesReader <- Triangles(headerDef, trianglesDef)
-		particlesReader <- Particles(headerDef, particlesDef)
+		headerCodec <- Header(headerDef)
+		trianglesCodec <- Triangles(headerDef, trianglesDef)
+		particlesCodec <- Particles(headerDef, particlesDef)
 	} yield {
+
+
+
+
+		Platform.runLater {
+
+
+			val (node, view, trigs) = Bunny.makeBunny()
+
+			view.scaleX = 4.8
+			view.scaleY = 4.8
+			view.scaleZ = 4.8
+			view.translateY = 200
+			view.translateX = -100
+			view.translateZ = 200
+			group.children += node
+
+			val transformed = trigs.points.grouped(3).flatMap { g =>
+				val p3 = view.localToParent(g(0), g(1), g(2))
+				Array(p3.getX.toFloat, p3.getY.toFloat, p3.getZ.toFloat)
+			}.toArray
+
+			println(s"points: ${transformed.length} ${transformed.par.min} ${transformed.par.max}")
+			val buffer = openMmf(BasePath / "colliders.mmf")
+			trianglesCodec.write(Triangles(transformed), buffer)
+		}
 
 
 		val particles = new ConcurrentHashMap[Long, Sphere]()
 		val S = Color.web("A76D34")
 		val E = Color.White
-		unoptimisedThreadedContinuousRead(BasePath / "particles.mmf", particlesReader) {
+		unoptimisedThreadedContinuousRead(BasePath / "particles.mmf", particlesCodec) {
 			case Particles(xs) =>
 				xs.foreach { x =>
 					val sphere = particles.computeIfAbsent(x.id, { k =>
@@ -152,7 +196,7 @@ object MM extends JFXApp {
 					sphere.translateY = x.position.y
 					sphere.translateZ = x.position.z
 				}
-		} -> unoptimisedThreadedContinuousRead(BasePath / "triangles.mmf", trianglesReader) {
+		} -> unoptimisedThreadedContinuousRead(BasePath / "triangles.mmf", trianglesCodec) {
 			case Triangles(xs) =>
 
 				def mkFaces(n: Int) = {

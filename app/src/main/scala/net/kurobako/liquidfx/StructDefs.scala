@@ -153,7 +153,9 @@ object StructDefs {
 
 				override def write(b: Triangles, buffer: ByteBuffer): Unit = {
 					val entries = b.ps.length / floatPerTrig
-					headerFormatter.write(Header(System.currentTimeMillis(), entries), buffer)
+					val header = Header(System.currentTimeMillis(), entries)
+					headerFormatter.write(header, buffer)
+					println("Write header=" + header)
 					for (i <- 0 until entries) {
 						writeStaged(buffer, v0x, b.ps(i * floatPerTrig + 0))
 						writeStaged(buffer, v0y, b.ps(i * floatPerTrig + 1))
