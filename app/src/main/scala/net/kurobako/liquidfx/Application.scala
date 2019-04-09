@@ -8,13 +8,14 @@ import cats.implicits._
 import com.google.common.io.Resources
 import com.javafx.experiments.importers.Importer3D
 import javafx.animation.Interpolator
-import net.kurobako.liquidfx.Metaball.Triangle
-import net.kurobako.liquidfx.SphSolver.{Particle, Vec3}
+import net.kurobako.liquidfx.Maths.{Triangle, Vec3}
+import net.kurobako.liquidfx.Metaball
+import net.kurobako.liquidfx.SphSolver.Particle
 import scalafx.Includes._
 import scalafx.animation._
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
-import scalafx.beans.property.{BooleanProperty, DoubleProperty, IntegerProperty, StringProperty}
+import scalafx.beans.property.{BooleanProperty, DoubleProperty, FloatProperty, IntegerProperty, StringProperty}
 import scalafx.scene._
 import scalafx.scene.control.{Button, Label, Slider, ToggleButton}
 import scalafx.scene.layout.{HBox, Priority, StackPane, VBox}
@@ -23,6 +24,7 @@ import scalafx.scene.shape._
 import scalafx.stage.FileChooser
 import scalafx.util.Duration
 
+import Maths._
 
 object Application extends JFXApp {
 
@@ -30,8 +32,8 @@ object Application extends JFXApp {
 	val play    = BooleanProperty(true)
 	val info    = StringProperty("")
 	val iter    = IntegerProperty(1)
-	val gravity = DoubleProperty(9.8)
-	val deltaT  = DoubleProperty(1)
+	val gravity = FloatProperty(9.8f)
+	val deltaT  = FloatProperty(1f)
 
 	val box   = new Box(100, 100, 100) {
 		material = new PhongMaterial(Color.Red)
@@ -178,7 +180,7 @@ object Application extends JFXApp {
 	new Thread(() => {
 
 
-		val solver = new SphSolver(scale = 300d)
+		val solver = new SphSolver(scale = 300f)
 		val obstacles = Array(
 //			Colliders.convexMeshCollider(bunnyMesh, mv),
 //			Colliders.convexMeshCollider(slope),
@@ -218,9 +220,9 @@ object Application extends JFXApp {
 			val start = System.currentTimeMillis()
 			val that = time("solve") {
 				solver.advance(
-					dt = 0.0083 * deltaT.value,
+					dt = 0.0083f * deltaT.value,
 					iteration = iter.value,
-					constantForce = { p: Particle[Sphere] => Vec3(0d, p.mass * gravity.value, 0d) })(acc, obstacles)
+					constantForce = { p: Particle[Sphere] => Vec3(0f, p.mass * gravity.value, 0f) })(acc, obstacles)
 			}
 
 			val tCount = if (surface.value) {
@@ -232,13 +234,13 @@ object Application extends JFXApp {
 						xx
 					}
 
-					val rSq = 100.0 * 100.0
+					val rSq = 100 ** 2
 
-					val cc = new ConcurrentHashMap[Vec3, Double]()
+					val cc = new ConcurrentHashMap[Vec3, Float]()
 
 					def doIt(p: Vec3) = {
 						cc.computeIfAbsent(p, p2 => {
-							bs.pointsInSphere(p2, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p2).magnitudeSq) * 2 }
+							bs.pointsInSphere(p2, 25).foldLeft(0f) { (acc, x) => acc + (rSq / (x - p2).magnitudeSq) * 2 }
 						})
 						//					bs.pointsInSphere(p, 25).foldLeft(0.0) { (acc, x) => acc + (rSq / (x - p).magnitudeSq) }
 					}

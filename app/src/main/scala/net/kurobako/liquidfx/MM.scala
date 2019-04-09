@@ -5,10 +5,11 @@ import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentHashMap
 
 import better.files._
-import net.kurobako.liquidfx.Metaball.Triangle
-import net.kurobako.liquidfx.SphSolver.Vec3
+import com.google.common.base.StandardSystemProperty
+import net.kurobako.liquidfx.Maths.Triangle
 import net.kurobako.liquidfx.StructDefs._
 import scalafx.Includes.{handle, _}
+import scalafx.animation.AnimationTimer
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
 import scalafx.beans.property.BooleanProperty
@@ -22,7 +23,18 @@ import scalafx.scene.{AmbientLight, Group, Scene}
 
 object MM extends JFXApp {
 
-	private val BasePath = File("/home/tom/libfluid/cmake-build-release/samples/")
+
+	val os = StandardSystemProperty.OS_NAME.value()
+
+
+	private val BasePath = os match {
+		case win if os.contains("win")    => File("C:\\Users\\Tom\\libfluid\\cmake-build-release\\samples\\")
+		case unix if unix.contains("nix") ||
+					 unix.contains("nux") ||
+					 unix.contains("aix") => File("/home/tom/libfluid/cmake-build-release/samples/")
+		case unknown                      => throw new Exception(s"Unknown os:$unknown")
+	}
+
 
 	def time[R](name: String)(block: => R): R = {
 		val t0 = System.nanoTime()
@@ -51,7 +63,7 @@ object MM extends JFXApp {
 
 
 	def updateMesh(mesh: TriangleMesh, xs: Seq[Triangle]) = {
-		mesh.points = xs.flatMap(_.points).map(_.toFloat).toArray
+		mesh.points = xs.flatMap(_.points).toArray
 		mesh.faces = Array.tabulate(xs.length * 3)(i => i -> 0).flatMap { case (l, r) => Array(l, r) }
 	}
 
@@ -109,7 +121,7 @@ object MM extends JFXApp {
 						last = start
 						time(file.name) {
 							val a = g()
-							Platform.runLater(h(a))
+							h(a)
 						}
 					}
 			}
@@ -145,14 +157,13 @@ object MM extends JFXApp {
 
 	val run = for {
 		headerDef <- StructDefs.readStructDef[Header](BasePath / "header.json")
+		meshTrianglesDef <- StructDefs.readStructDef[MeshTriangles](BasePath / "mesh_triangle.json")
 		trianglesDef <- StructDefs.readStructDef[Triangles](BasePath / "triangle.json")
 		particlesDef <- StructDefs.readStructDef[Particles](BasePath / "particle.json")
-		headerCodec <- Header(headerDef)
 		trianglesCodec <- Triangles(headerDef, trianglesDef)
+		meshTrianglesCodec <- MeshTriangles(headerDef, meshTrianglesDef)
 		particlesCodec <- Particles(headerDef, particlesDef)
 	} yield {
-
-
 
 
 		Platform.runLater {
@@ -166,7 +177,7 @@ object MM extends JFXApp {
 			view.translateY = 200
 			view.translateX = -100
 			view.translateZ = 200
-			group.children += node
+			//			group.children += node
 
 			val transformed = trigs.points.grouped(3).flatMap { g =>
 				val p3 = view.localToParent(g(0), g(1), g(2))
@@ -182,13 +193,25 @@ object MM extends JFXApp {
 		val particles = new ConcurrentHashMap[Long, Sphere]()
 		val S = Color.web("A76D34")
 		val E = Color.White
-		unoptimisedThreadedContinuousRead(BasePath / "particles.mmf", particlesCodec) {
-			case Particles(xs) =>
-				xs.foreach { x =>
+
+		@volatile var _points: Array[Float] = Array.empty
+		@volatile var _faces: Array[Int] = Array.empty
+		@volatile var _particles: Array[Particle] = Array.empty
+
+		AnimationTimer { _ =>
+			if (!_points.isEmpty && !_faces.isEmpty) {
+				mesh.points = _points
+				mesh.faces = _faces
+				_points = Array.empty
+				_faces = Array.empty
+				println("\t->Tick")
+			}
+			if (showParticle.get() && !_particles.isEmpty) {
+				_particles.foreach { x =>
 					val sphere = particles.computeIfAbsent(x.id, { k =>
 						new Sphere(10) {
 							visible <== showParticle
-							material = new PhongMaterial(S.interpolate(E, k.toFloat / xs.length))
+							material = new PhongMaterial(S.interpolate(E, k.toFloat / _particles.length))
 							group.children += this.delegate
 						}
 					})
@@ -196,9 +219,14 @@ object MM extends JFXApp {
 					sphere.translateY = x.position.y
 					sphere.translateZ = x.position.z
 				}
-		} -> unoptimisedThreadedContinuousRead(BasePath / "triangles.mmf", trianglesCodec) {
-			case Triangles(xs) =>
+			}
+		}.start()
 
+
+		unoptimisedThreadedContinuousRead(BasePath / "particles.mmf", particlesCodec) {
+			case Particles(xs) => _particles = xs
+		} -> unoptimisedThreadedContinuousRead(BasePath / "triangles.mmf", meshTrianglesCodec) {
+			case MeshTriangles(vertices, normals) =>
 				def mkFaces(n: Int) = {
 					val faces = Array.ofDim[Int](n * 2)
 					for (i <- 0 until n) {
@@ -207,14 +235,9 @@ object MM extends JFXApp {
 					}
 					faces
 				}
-
-				val fs = mkFaces(xs.length / 3)
-				val sma = Array.tabulate[Int](fs.length)(x => 32)
-				println("Trigs: " + xs.length)
-				mesh.points = xs
-				mesh.faces = fs
-			//				mesh.getFaceSmoothingGroups.setAll(sma: _*)
-
+				_points = vertices
+				_faces = mkFaces(vertices.length / 3)
+				println("->Trigs: " + vertices.length)
 		}
 
 	}

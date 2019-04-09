@@ -1,6 +1,7 @@
 package net.kurobako.liquidfx
 
-import net.kurobako.liquidfx.SphSolver.Vec3
+
+import net.kurobako.liquidfx.Maths.{Triangle, Vec3}
 
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
@@ -314,18 +315,9 @@ object Metaball {
 	final val Epsilon = 0.00001
 
 
-	case class Triangle(a: Vec3, b: Vec3, c: Vec3) {
-		def points: Array[Double] = Array(
-			a.x, a.y, a.z,
-			b.x, b.y, b.z,
-			c.x, c.y, c.z,
-		)
-		def v0 = a
-		def v1 = b
-		def v2 = c
-	}
 
-	case class GridCell(ps: Array[(Vec3, Double)]) // [8]
+
+	case class GridCell(ps: Array[(Vec3, Float)]) // [8]
 	case class Cell(ps: Array[Vec3]) // [8]
 
 	final val CubeVertices = Array(
@@ -340,9 +332,9 @@ object Metaball {
 	)
 
 	def mkLattice(gridSize: Int)
-				 (xRange: Range ,
-				  yRange: Range ,
-				  zRange: Range ) = {
+				 (xRange: Range,
+				  yRange: Range,
+				  zRange: Range) = {
 
 		(for {
 			x <- xRange.par
@@ -352,7 +344,7 @@ object Metaball {
 		} yield Cell(CubeVertices.map(_ * gridSize + offset))).toArray
 	}
 
-	def parameterise(xs: Seq[Cell], f: Vec3 => Double): Seq[Triangle] = {
+	def parameterise(xs: Seq[Cell], f: Vec3 => Float): Seq[Triangle] = {
 		val n = (for {
 			x <- xs.par
 			t <- mkTriangles(GridCell(x.ps.map(p => p -> f(p))), 100)
@@ -364,7 +356,7 @@ object Metaball {
 	def mkTriangles(g: GridCell, isolevel: Int): Seq[Triangle] = {
 
 		def p(idx: Int): Vec3 = g.ps(idx)._1
-		def v(idx: Int): Double = g.ps(idx)._2
+		def v(idx: Int): Float = g.ps(idx)._2
 
 		var cidx = 0
 		if (v(0) < isolevel) cidx |= 1
@@ -381,7 +373,7 @@ object Metaball {
 		}
 
 
-		def interpolate(p1: Vec3, p2: Vec3, v1: Double, v2: Double): Vec3 =
+		def interpolate(p1: Vec3, p2: Vec3, v1: Float, v2: Float): Vec3 =
 			if (Math.abs(isolevel - v1) < Epsilon) p1
 			else if (Math.abs(isolevel - v2) < Epsilon) p2
 			else if (Math.abs(v1 - v2) < Epsilon) p1

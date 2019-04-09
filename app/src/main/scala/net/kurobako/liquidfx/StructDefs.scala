@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets
 
 import better.files.File
-import net.kurobako.liquidfx.SphSolver.Vec3
+import net.kurobako.liquidfx.Maths.Vec3
 
 import scala.annotation.switch
 import scala.util.Try
@@ -111,10 +111,12 @@ object StructDefs {
 		}
 	}
 
-	case class Triangles(ps: Array[Float]) extends Struct
+
+	case class Triangles(vertices: Array[Float]) extends Struct
 	object Triangles {
 		def apply(headerDef: StructDef[Header], sdef: StructDef[Triangles]):
 		Either[Throwable, StructCodec[Header |> Triangles, Triangles]] = for {
+
 			v0x <- sdef.resolveLength("v0.x", 0)
 			v0y <- sdef.resolveLength("v0.y", 1)
 			v0z <- sdef.resolveLength("v0.z", 2)
@@ -127,45 +129,144 @@ object StructDefs {
 			headerFormatter <- Header(headerDef)
 		} yield {
 			val readStaged = mkStagedReadFloatTruncated(
-				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z)
+				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z,
+			)
 			val writeStaged = mkStagedWriteFloatTruncated(
-				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z)
+				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z,
+			)
 			val floatPerTrig = 3 * 3
 			new StructCodec[Header |> Triangles, Triangles] {
 				override def read(buffer: ByteBuffer): Header |> Triangles = {
 					val header = headerFormatter.read(buffer)
 					header -> { () =>
-						val vertexArray = Array.ofDim[Float](header.entries * floatPerTrig)
+						val vertices = Array.ofDim[Float](header.entries * floatPerTrig)
 						for (i <- 0 until header.entries) {
-							vertexArray(i * floatPerTrig + 0) = readStaged(buffer, v0x)
-							vertexArray(i * floatPerTrig + 1) = readStaged(buffer, v0y)
-							vertexArray(i * floatPerTrig + 2) = readStaged(buffer, v0z)
-							vertexArray(i * floatPerTrig + 3) = readStaged(buffer, v1x)
-							vertexArray(i * floatPerTrig + 4) = readStaged(buffer, v1y)
-							vertexArray(i * floatPerTrig + 5) = readStaged(buffer, v1z)
-							vertexArray(i * floatPerTrig + 6) = readStaged(buffer, v2x)
-							vertexArray(i * floatPerTrig + 7) = readStaged(buffer, v2y)
-							vertexArray(i * floatPerTrig + 8) = readStaged(buffer, v2z)
+							vertices(i * floatPerTrig + 0) = readStaged(buffer, v0x)
+							vertices(i * floatPerTrig + 1) = readStaged(buffer, v0y)
+							vertices(i * floatPerTrig + 2) = readStaged(buffer, v0z)
+							vertices(i * floatPerTrig + 3) = readStaged(buffer, v1x)
+							vertices(i * floatPerTrig + 4) = readStaged(buffer, v1y)
+							vertices(i * floatPerTrig + 5) = readStaged(buffer, v1z)
+							vertices(i * floatPerTrig + 6) = readStaged(buffer, v2x)
+							vertices(i * floatPerTrig + 7) = readStaged(buffer, v2y)
+							vertices(i * floatPerTrig + 8) = readStaged(buffer, v2z)
 						}
-						Triangles(vertexArray)
+						Triangles(vertices)
 					}
 				}
 
 				override def write(b: Triangles, buffer: ByteBuffer): Unit = {
-					val entries = b.ps.length / floatPerTrig
+					val entries = b.vertices.length / floatPerTrig
 					val header = Header(System.currentTimeMillis(), entries)
 					headerFormatter.write(header, buffer)
 					println("Write header=" + header)
 					for (i <- 0 until entries) {
-						writeStaged(buffer, v0x, b.ps(i * floatPerTrig + 0))
-						writeStaged(buffer, v0y, b.ps(i * floatPerTrig + 1))
-						writeStaged(buffer, v0z, b.ps(i * floatPerTrig + 2))
-						writeStaged(buffer, v1x, b.ps(i * floatPerTrig + 3))
-						writeStaged(buffer, v1y, b.ps(i * floatPerTrig + 4))
-						writeStaged(buffer, v1z, b.ps(i * floatPerTrig + 5))
-						writeStaged(buffer, v2x, b.ps(i * floatPerTrig + 6))
-						writeStaged(buffer, v2y, b.ps(i * floatPerTrig + 7))
-						writeStaged(buffer, v2z, b.ps(i * floatPerTrig + 8))
+						writeStaged(buffer, v0x, b.vertices(i * floatPerTrig + 0))
+						writeStaged(buffer, v0y, b.vertices(i * floatPerTrig + 1))
+						writeStaged(buffer, v0z, b.vertices(i * floatPerTrig + 2))
+						writeStaged(buffer, v1x, b.vertices(i * floatPerTrig + 3))
+						writeStaged(buffer, v1y, b.vertices(i * floatPerTrig + 4))
+						writeStaged(buffer, v1z, b.vertices(i * floatPerTrig + 5))
+						writeStaged(buffer, v2x, b.vertices(i * floatPerTrig + 6))
+						writeStaged(buffer, v2y, b.vertices(i * floatPerTrig + 7))
+						writeStaged(buffer, v2z, b.vertices(i * floatPerTrig + 8))
+					}
+				}
+			}
+		}
+	}
+
+
+	case class MeshTriangles(vertices: Array[Float], normals: Array[Float]) extends Struct
+	object MeshTriangles {
+		def apply(headerDef: StructDef[Header], sdef: StructDef[MeshTriangles]):
+		Either[Throwable, StructCodec[Header |> MeshTriangles, MeshTriangles]] = for {
+
+			v0x <- sdef.resolveLength("v0.x", 0)
+			v0y <- sdef.resolveLength("v0.y", 1)
+			v0z <- sdef.resolveLength("v0.z", 2)
+			v1x <- sdef.resolveLength("v1.x", 3)
+			v1y <- sdef.resolveLength("v1.y", 4)
+			v1z <- sdef.resolveLength("v1.z", 5)
+			v2x <- sdef.resolveLength("v2.x", 6)
+			v2y <- sdef.resolveLength("v2.y", 7)
+			v2z <- sdef.resolveLength("v2.z", 8)
+
+			n0x <- sdef.resolveLength("n0.x", 9)
+			n0y <- sdef.resolveLength("n0.y", 10)
+			n0z <- sdef.resolveLength("n0.z", 11)
+			n1x <- sdef.resolveLength("n1.x", 12)
+			n1y <- sdef.resolveLength("n1.y", 13)
+			n1z <- sdef.resolveLength("n1.z", 14)
+			n2x <- sdef.resolveLength("n2.x", 15)
+			n2y <- sdef.resolveLength("n2.y", 16)
+			n2z <- sdef.resolveLength("n2.z", 17)
+
+			headerFormatter <- Header(headerDef)
+		} yield {
+			val readStaged = mkStagedReadFloatTruncated(
+				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z,
+				n0x, n0y, n0z, n1x, n1y, n1z, n2x, n2y, n2z,
+			)
+			val writeStaged = mkStagedWriteFloatTruncated(
+				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z,
+				n0x, n0y, n0z, n1x, n1y, n1z, n2x, n2y, n2z
+			)
+			val floatPerTrig = 3 * 3
+			new StructCodec[Header |> MeshTriangles, MeshTriangles] {
+				override def read(buffer: ByteBuffer): Header |> MeshTriangles = {
+					val header = headerFormatter.read(buffer)
+					header -> { () =>
+						val vertices = Array.ofDim[Float](header.entries * floatPerTrig)
+						val normals = Array.ofDim[Float](header.entries * floatPerTrig)
+						for (i <- 0 until header.entries) {
+							vertices(i * floatPerTrig + 0) = readStaged(buffer, v0x)
+							vertices(i * floatPerTrig + 1) = readStaged(buffer, v0y)
+							vertices(i * floatPerTrig + 2) = readStaged(buffer, v0z)
+							vertices(i * floatPerTrig + 3) = readStaged(buffer, v1x)
+							vertices(i * floatPerTrig + 4) = readStaged(buffer, v1y)
+							vertices(i * floatPerTrig + 5) = readStaged(buffer, v1z)
+							vertices(i * floatPerTrig + 6) = readStaged(buffer, v2x)
+							vertices(i * floatPerTrig + 7) = readStaged(buffer, v2y)
+							vertices(i * floatPerTrig + 8) = readStaged(buffer, v2z)
+							normals(i * floatPerTrig + 0) = readStaged(buffer, n0x)
+							normals(i * floatPerTrig + 1) = readStaged(buffer, n0y)
+							normals(i * floatPerTrig + 2) = readStaged(buffer, n0z)
+							normals(i * floatPerTrig + 3) = readStaged(buffer, n1x)
+							normals(i * floatPerTrig + 4) = readStaged(buffer, n1y)
+							normals(i * floatPerTrig + 5) = readStaged(buffer, n1z)
+							normals(i * floatPerTrig + 6) = readStaged(buffer, n2x)
+							normals(i * floatPerTrig + 7) = readStaged(buffer, n2y)
+							normals(i * floatPerTrig + 8) = readStaged(buffer, n2z)
+						}
+						MeshTriangles(vertices, normals)
+					}
+				}
+
+				override def write(b: MeshTriangles, buffer: ByteBuffer): Unit = {
+					val entries = b.vertices.length / floatPerTrig
+					val header = Header(System.currentTimeMillis(), entries)
+					headerFormatter.write(header, buffer)
+					println("Write header=" + header)
+					for (i <- 0 until entries) {
+						writeStaged(buffer, v0x, b.vertices(i * floatPerTrig + 0))
+						writeStaged(buffer, v0y, b.vertices(i * floatPerTrig + 1))
+						writeStaged(buffer, v0z, b.vertices(i * floatPerTrig + 2))
+						writeStaged(buffer, v1x, b.vertices(i * floatPerTrig + 3))
+						writeStaged(buffer, v1y, b.vertices(i * floatPerTrig + 4))
+						writeStaged(buffer, v1z, b.vertices(i * floatPerTrig + 5))
+						writeStaged(buffer, v2x, b.vertices(i * floatPerTrig + 6))
+						writeStaged(buffer, v2y, b.vertices(i * floatPerTrig + 7))
+						writeStaged(buffer, v2z, b.vertices(i * floatPerTrig + 8))
+						writeStaged(buffer, n0x, b.normals(i * floatPerTrig + 0))
+						writeStaged(buffer, n0y, b.normals(i * floatPerTrig + 1))
+						writeStaged(buffer, n0z, b.normals(i * floatPerTrig + 2))
+						writeStaged(buffer, n1x, b.normals(i * floatPerTrig + 3))
+						writeStaged(buffer, n1y, b.normals(i * floatPerTrig + 4))
+						writeStaged(buffer, n1z, b.normals(i * floatPerTrig + 5))
+						writeStaged(buffer, n2x, b.normals(i * floatPerTrig + 6))
+						writeStaged(buffer, n2y, b.normals(i * floatPerTrig + 7))
+						writeStaged(buffer, n2z, b.normals(i * floatPerTrig + 8))
 					}
 				}
 			}
@@ -227,12 +328,12 @@ object StructDefs {
 						writeLongTruncated(buffer, id, x.id)
 						writeIntTruncated(buffer, tpe, x.tpe)
 						writeFloatTruncated(buffer, mass, x.mass)
-						writeStaged(buffer, positionX, x.position.x.toFloat)
-						writeStaged(buffer, positionY, x.position.y.toFloat)
-						writeStaged(buffer, positionZ, x.position.z.toFloat)
-						writeStaged(buffer, velocityX, x.velocity.x.toFloat)
-						writeStaged(buffer, velocityY, x.velocity.y.toFloat)
-						writeStaged(buffer, velocityZ, x.velocity.z.toFloat)
+						writeStaged(buffer, positionX, x.position.x)
+						writeStaged(buffer, positionY, x.position.y)
+						writeStaged(buffer, positionZ, x.position.z)
+						writeStaged(buffer, velocityX, x.velocity.x)
+						writeStaged(buffer, velocityY, x.velocity.y)
+						writeStaged(buffer, velocityZ, x.velocity.z)
 					}
 				}
 			}

@@ -1,6 +1,7 @@
 package net.kurobako.liquidfx
 
-import net.kurobako.liquidfx.SphSolver.Vec3
+import net.kurobako.liquidfx.Maths.Vec3
+
 
 object Geom {
 
@@ -17,8 +18,8 @@ object Geom {
 		if (a.abs < epsilon || bb4ac < 0) (None, None)
 		else if (bb4ac.abs < epsilon) Some(p1 + dp * (-b / (2 * a))) -> None
 		else {
-			val x = -b + Math.sqrt(bb4ac) / 2 * a
-			val y = -b - Math.sqrt(bb4ac) / 2 * a
+			val x = -b + Math.sqrt(bb4ac).toFloat / 2 * a
+			val y = -b - Math.sqrt(bb4ac).toFloat / 2 * a
 			Some(p1 + dp * x) ->
 			Some(p1 + dp * y)
 		}

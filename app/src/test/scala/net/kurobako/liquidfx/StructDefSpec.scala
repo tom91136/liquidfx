@@ -8,8 +8,8 @@ import java.time.{Duration, Instant}
 import better.files.{Dispose, File}
 import com.google.common.primitives.Floats
 import net.kurobako.liquidfx.MM.BasePath
-import net.kurobako.liquidfx.SphSolver.Vec3
-import net.kurobako.liquidfx.StructDefs.{Entry, Header, Particle, Particles, StructDef, Triangles}
+import net.kurobako.liquidfx.Maths.Vec3
+import net.kurobako.liquidfx.StructDefs.{Entry, Header, MeshTriangles, Particle, Particles, StructDef, Triangles}
 import org.scalactic.{Equality, TolerantNumerics}
 import org.scalatest._
 
@@ -71,7 +71,7 @@ class StructDefSpec extends FlatSpec with Matchers {
 	"Particles" should "write and then read" in {
 		openRwMmf(1024 * 4).foreach { buffer =>
 			val expected = Particles(Array.tabulate(100) { i =>
-				Particle(i, i * 2, 42, Vec3(43), Vec3(math.Pi))
+				Particle(i, i * 2, 42, Vec3(43), Vec3(math.Pi.toFloat))
 			})
 			val reader = Particles(HeaderDef, ParticlesDef).right.get
 			buffer.clear()
@@ -96,8 +96,8 @@ class StructDefSpec extends FlatSpec with Matchers {
 			val (header, f) = reader.read(buffer)
 			val actual = f()
 			(header.timestamp - System.currentTimeMillis()).toInt should be < 10
-			header.entries should ===(expected.ps.length / floatPerTrig)
-			actual.ps should contain theSameElementsInOrderAs expected.ps
+			header.entries should ===(expected.vertices.length / floatPerTrig)
+			actual.vertices should contain theSameElementsInOrderAs expected.vertices
 		}
 	}
 

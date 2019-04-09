@@ -1,6 +1,7 @@
 package net.kurobako.liquidfx
 
-import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Response, Vec3}
+import net.kurobako.liquidfx.Maths.Vec3
+import net.kurobako.liquidfx.SphSolver.{Particle, Ray, Response}
 
 
 object Check extends App {
@@ -10,7 +11,7 @@ object Check extends App {
 
 	val cf = { p: Particle[Int] => Vec3(0, p.mass * 9.8, 0) }
 
-	val solver = new SphSolver(0.1, 500)
+	val solver = new SphSolver(0.1f, 500)
 
 
 	val solved = (0 until 5).foldLeft(ps) { (acc, _) =>

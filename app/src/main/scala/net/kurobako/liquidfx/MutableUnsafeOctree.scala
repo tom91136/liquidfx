@@ -1,6 +1,7 @@
 package net.kurobako.liquidfx
 
-import net.kurobako.liquidfx.SphSolver.Vec3
+
+import net.kurobako.liquidfx.Maths.Vec3
 
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
@@ -14,7 +15,7 @@ object MutableUnsafeOctree {
 		Vec3(-1, -1, 1), Vec3(1, -1, 1),
 		Vec3(-1, 1, 1), Vec3(1, 1, 1))
 
-	def apply[A : ClassTag](c: Vec3, halfSize: Double )(f : A => Vec3) =
+	def apply[A: ClassTag](c: Vec3, halfSize: Float)(f: A => Vec3) =
 		new MutableUnsafeOctree[A](null, c, halfSize)(f)
 
 }
@@ -22,7 +23,7 @@ object MutableUnsafeOctree {
 
 // highly modified version of
 // https://github.com/fishuyo/scalaAV/blob/master/src/main/scala/spatial/octree.scala
-class MutableUnsafeOctree[A: ClassTag](parent: MutableUnsafeOctree[A], centre: Vec3, halfSize: Double)(f: A => Vec3) {
+class MutableUnsafeOctree[A: ClassTag](parent: MutableUnsafeOctree[A], centre: Vec3, halfSize: Float)(f: A => Vec3) {
 
 	private final val min = centre - halfSize
 	private final val max = centre + halfSize
@@ -76,14 +77,12 @@ class MutableUnsafeOctree[A: ClassTag](parent: MutableUnsafeOctree[A], centre: V
 		val rSquared = radius * radius
 
 
-
-
 		if (this.intersectsSphere(centre, radius)) {
 			if (points != null) {
 				results = points.filter(p => (centre - f(p)).magnitudeSq <= rSquared)
 			} else if (childrenCount > 0) {
 				var i = 0
-				while(i < 8){
+				while (i < 8) {
 					if (children(i) != null) {
 						val points = children(i).pointsInSphere0(centre, radius)
 						if (points != null) {
@@ -91,7 +90,7 @@ class MutableUnsafeOctree[A: ClassTag](parent: MutableUnsafeOctree[A], centre: V
 							results ++= points
 						}
 					}
-					i+=1
+					i += 1
 				}
 			}
 		}

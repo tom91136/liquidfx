@@ -2,14 +2,13 @@ package net.kurobako.liquidfx
 
 import java.util.{Timer, TimerTask}
 
-import net.kurobako.liquidfx.Metaball.Triangle
-import net.kurobako.liquidfx.SphSolver.{Mat3, Ray, Response, Vec3}
+import net.kurobako.liquidfx.SphSolver.{Ray, Response}
 import scalafx.scene.Node
 import scalafx.Includes._
-
 import scalafx.scene.shape.{Box, MeshView, Sphere, TriangleMesh}
 import cats._
 import cats.implicits._
+import net.kurobako.liquidfx.Maths.{Triangle, Vec3}
 import scalafx.application.Platform
 import scalafx.scene.paint.{Color, PhongMaterial}
 
@@ -166,28 +165,28 @@ object Colliders {
 			val h = rayVector cross edge2; // N
 			val a = edge1 dot h
 
-			if (a.abs < 0.00000001) // almost 0
+			if (a.abs < 0.00000001f) // almost 0
 				return None; // they are parallel so they don't intersect !
 
 
-			val f = 1.0 / a
+			val f = 1f / a
 			val s = rayOrigin - vertex0
 			val u = f * (s dot h)
-			if (u < 0.0 || u > 1.0) return None
+			if (u < 0f || u > 1f) return None
 
 			val q = s cross edge1
 			val v = f * (rayVector dot q)
-			if (v < 0.0 || v > 1.0) return None
+			if (v < 0f || v > 1f) return None
 
 			val t = f * (edge2 dot q)
 
-			if (t < 0.00000001) return None
+			if (t < 0.00000001f) return None
 
-			if (t > 2) return None
+			if (t > 2f) return None
 
 
 			//			Some(prev)
-			val vec = rayOrigin + (rayVector * (t))
+			val vec = rayOrigin + (rayVector * t)
 			//			println(vec.distance(rayOrigin) + " t = "+ t)
 			//			Some(vec)
 			Some(vec)
