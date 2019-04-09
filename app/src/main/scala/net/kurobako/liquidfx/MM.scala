@@ -3,6 +3,7 @@ package net.kurobako.liquidfx
 import java.nio.file.StandardOpenOption
 import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 import better.files._
 import com.google.common.base.StandardSystemProperty
@@ -13,7 +14,8 @@ import scalafx.animation.AnimationTimer
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
 import scalafx.beans.property.BooleanProperty
-import scalafx.geometry.Point3D
+import scalafx.geometry.{Point3D, Pos}
+import scalafx.scene.control.Label
 import scalafx.scene.input.{KeyCode, KeyEvent}
 import scalafx.scene.layout.{Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
@@ -49,7 +51,7 @@ object MM extends JFXApp {
 
 	val ambient = new AmbientLight(Color.LightYellow)
 
-	val mesh     = new TriangleMesh(VertexFormat.PointTexcoord) {
+	val mesh     = new TriangleMesh(VertexFormat.PointNormalTexcoord) {
 		texCoords = Array(1, 1)
 	}
 	val meshView = new MeshView(mesh) {
@@ -129,7 +131,7 @@ object MM extends JFXApp {
 	}
 
 	val subScene = SceneControl.mkScene(group, 500, 500)
-
+	val fpsLabel = new Label()
 	stage = new PrimaryStage {
 		title = "SPH simulation"
 		scene = new Scene(new VBox(
@@ -137,7 +139,9 @@ object MM extends JFXApp {
 			new StackPane {
 				children = Seq(
 					subScene,
+					fpsLabel
 				)
+				alignment = Pos.TopRight
 				subScene.width <== width
 				subScene.height <== height
 				vgrow = Priority.Always
@@ -195,16 +199,26 @@ object MM extends JFXApp {
 		val E = Color.White
 
 		@volatile var _points: Array[Float] = Array.empty
+		@volatile var _normals: Array[Float] = Array.empty
 		@volatile var _faces: Array[Int] = Array.empty
+
 		@volatile var _particles: Array[Particle] = Array.empty
 
+		@volatile var elapsed: Long = 0l
+		val last: AtomicLong = new AtomicLong(System.currentTimeMillis())
+
+
 		AnimationTimer { _ =>
-			if (!_points.isEmpty && !_faces.isEmpty) {
+
+			if (_points.nonEmpty && _faces.nonEmpty && _normals.nonEmpty) {
 				mesh.points = _points
+				mesh.getNormals.setAll(_normals: _*)
 				mesh.faces = _faces
 				_points = Array.empty
+				_normals = Array.empty
 				_faces = Array.empty
 				println("\t->Tick")
+				fpsLabel.text = s" ${(1000.0 / elapsed).round}FPS (${elapsed}ms)"
 			}
 			if (showParticle.get() && !_particles.isEmpty) {
 				_particles.foreach { x =>
@@ -228,16 +242,19 @@ object MM extends JFXApp {
 		} -> unoptimisedThreadedContinuousRead(BasePath / "triangles.mmf", meshTrianglesCodec) {
 			case MeshTriangles(vertices, normals) =>
 				def mkFaces(n: Int) = {
-					val faces = Array.ofDim[Int](n * 2)
+					val faces = Array.ofDim[Int](n * 3)
 					for (i <- 0 until n) {
-						faces(i * 2 + 0) = i // vertex points
-						//								faces(i * 2 + 1) = i / 3 // normals, so 1/3 of point length
+						faces(i * 3 + 0) = i // vertices
+						faces(i * 3 + 1) = i // normals
 					}
 					faces
 				}
 				_points = vertices
+				_normals = normals
 				_faces = mkFaces(vertices.length / 3)
-				println("->Trigs: " + vertices.length)
+				val now = System.currentTimeMillis()
+				elapsed = now - last.getAndSet(now)
+				println(s"->Vertices: ${vertices.length} elasped=${elapsed}ms")
 		}
 
 	}
