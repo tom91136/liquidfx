@@ -25,12 +25,8 @@ import scalafx.scene.{AmbientLight, Group, Scene}
 
 object MM extends JFXApp {
 
-
-	val os = StandardSystemProperty.OS_NAME.value()
-
-
-	private val BasePath = os match {
-		case win if os.contains("win")    => File("C:\\Users\\Tom\\libfluid\\cmake-build-release\\samples\\")
+	private val BasePath = StandardSystemProperty.OS_NAME.value.toLowerCase match {
+		case win if win.contains("win")   => File("C:\\Users\\Tom\\libfluid\\cmake-build-release\\samples\\")
 		case unix if unix.contains("nix") ||
 					 unix.contains("nux") ||
 					 unix.contains("aix") => File("/home/tom/libfluid/cmake-build-release/samples/")
