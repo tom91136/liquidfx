@@ -323,6 +323,25 @@ object Metaball {
 		def v0 = a
 		def v1 = b
 		def v2 = c
+
+		def p1 = a
+		def p2 = b
+		def p3 = c
+
+		def arr: Array[Double] = Array(
+			a.x, a.y, a.z,
+			b.x, b.y, b.z,
+			c.x, c.y, c.z,
+		)
+		def normal: Vec3 = {
+			val U = p2 - p1
+			val V = p3 - p1
+			Vec3(
+				(U.y * V.z) - (U.z * V.y),
+				(U.z * V.x) - (U.x * V.z),
+				(U.x * V.y) - (U.y * V.x)
+			)
+		}
 	}
 
 	case class GridCell(ps: Array[(Vec3, Double)]) // [8]
@@ -340,9 +359,9 @@ object Metaball {
 	)
 
 	def mkLattice(gridSize: Int)
-				 (xRange: Range ,
-				  yRange: Range ,
-				  zRange: Range ) = {
+				 (xRange: Range,
+				  yRange: Range,
+				  zRange: Range) = {
 
 		(for {
 			x <- xRange.par
