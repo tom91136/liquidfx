@@ -95,7 +95,7 @@ object SceneControl {
 					if (de.isShiftDown) {
 						translate(delta)
 					} else if (de.isControlDown) {
-						zoom((delta.x + delta.y) / 2)
+						zoom((delta.x + delta.y) * 5 )
 					} else {
 						rotate(delta)
 					}

@@ -3,24 +3,24 @@ package net.kurobako.liquidfx
 import java.nio.file.StandardOpenOption
 import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 
 import better.files._
 import com.google.common.base.StandardSystemProperty
-import net.kurobako.liquidfx.Maths.Triangle
+import net.kurobako.liquidfx.Maths.{Triangle, Vec3}
 import net.kurobako.liquidfx.StructDefs._
 import scalafx.Includes.{handle, _}
 import scalafx.animation.AnimationTimer
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
 import scalafx.beans.property.BooleanProperty
-import scalafx.geometry.{Point3D, Pos}
+import scalafx.geometry.{Insets, Point3D, Pos}
 import scalafx.scene.control.Label
-import scalafx.scene.input.{KeyCode, KeyEvent}
+import scalafx.scene.input.{KeyCode, KeyEvent, MouseEvent}
 import scalafx.scene.layout.{Priority, StackPane, VBox}
 import scalafx.scene.paint.{Color, PhongMaterial}
 import scalafx.scene.shape._
-import scalafx.scene.{AmbientLight, Group, Scene}
+import scalafx.scene.{AmbientLight, Group, PointLight, Scene, SubScene}
 
 
 object MM extends JFXApp {
@@ -42,21 +42,29 @@ object MM extends JFXApp {
 		result
 	}
 
-
 	private val showParticle = BooleanProperty(false)
+	private val flatShading  = BooleanProperty(false)
+	private val wireFrame    = BooleanProperty(false)
+	val meshInvalidated    : AtomicBoolean = new AtomicBoolean(true)
+	val particleInvalidated: AtomicBoolean = new AtomicBoolean(true)
 
-	val ambient = new AmbientLight(Color.LightYellow)
 
 	val mesh     = new TriangleMesh(VertexFormat.PointNormalTexcoord) {
+		vertexFormat <== when(flatShading) choose VertexFormat.PointTexcoord otherwise VertexFormat.PointNormalTexcoord
 		texCoords = Array(1, 1)
+		vertexFormat.onChange {
+			faces.clear()
+			points.clear()
+			meshInvalidated.set(true)
+			Platform.requestNextPulse()
+		}
 	}
 	val meshView = new MeshView(mesh) {
-		drawMode = DrawMode.Fill
-		material = new PhongMaterial(Color.rgb(0, 119, 190)) {
-			specularColor = Color.rgb(190, 119, 190, 0.5)
-
-		}
 		cullFace = CullFace.None
+		drawMode <== when(wireFrame) choose DrawMode.Line otherwise DrawMode.Fill
+		material = new PhongMaterial(Color.rgb(0, 119, 190, 1)) {
+			specularColor = Color.rgb(255, 255, 255, 1)
+		}
 	}
 
 
@@ -67,6 +75,7 @@ object MM extends JFXApp {
 
 	val group = new Group(
 		SceneControl.mkAxis(),
+		new Box(10000, 1, 10000) {translateY = 2000},
 		meshView,
 	)
 
@@ -126,32 +135,47 @@ object MM extends JFXApp {
 		}).start()
 	}
 
-	val subScene = SceneControl.mkScene(group, 500, 500)
-	val fpsLabel = new Label()
+	val subScene: SubScene = SceneControl.mkScene(group, 500, 500)
+	val infoLabel          = new Label() {padding = Insets(8)}
 	stage = new PrimaryStage {
 		title = "SPH simulation"
-		scene = new Scene(new VBox(
+		scene = new Scene(
 
 			new StackPane {
 				children = Seq(
 					subScene,
-					fpsLabel
+					infoLabel
 				)
-				alignment = Pos.TopRight
+				alignment = Pos.TopLeft
 				subScene.width <== width
 				subScene.height <== height
 				vgrow = Priority.Always
-			},
-
-
-		), 800, 800) {
+			}, 800, 800) {
 			onKeyPressed = { e: KeyEvent =>
 				e.code match {
 					case KeyCode.S => meshView.visible = !meshView.visible.value
 					case KeyCode.P => showParticle.value = !showParticle.value
+					case KeyCode.W => wireFrame.value = !wireFrame.value
+					case KeyCode.F => flatShading.value = !flatShading.value
 					case _         =>
 				}
 			}
+		}
+	}
+
+	def mkFaces(n: Int, format: VertexFormat): Array[Int] = {
+		format match {
+			case VertexFormat.PointTexcoord       =>
+				val faces = Array.ofDim[Int](n * 2)
+				for (i <- 0 until n) faces(i * 2 + 0) = i // vertices
+				faces
+			case VertexFormat.PointNormalTexcoord =>
+				val faces = Array.ofDim[Int](n * 3)
+				for (i <- 0 until n) {
+					faces(i * 3 + 0) = i // vertices
+					faces(i * 3 + 1) = i // normals
+				}
+				faces
 		}
 	}
 
@@ -177,16 +201,36 @@ object MM extends JFXApp {
 			view.translateY = 200
 			view.translateX = -100
 			view.translateZ = 200
-			//			group.children += node
+			group.children += node
 
-			val transformed = trigs.points.grouped(3).flatMap { g =>
-				val p3 = view.localToParent(g(0), g(1), g(2))
-				Array(p3.getX.toFloat, p3.getY.toFloat, p3.getZ.toFloat)
-			}.toArray
-
-			println(s"points: ${transformed.length} ${transformed.par.min} ${transformed.par.max}")
 			val buffer = openMmf(BasePath / "colliders.mmf")
-			trianglesCodec.write(Triangles(transformed), buffer)
+
+			group.onMouseReleased = handle {group.onMouseDragged = null}
+			group.onMouseClicked = { start: MouseEvent =>
+				if (start.pickResult.intersectedNode.exists(_.delegate == view)) {
+					val _start = Vec3(start.x, start.y, start.z)
+					group.onMouseDragged = { drag: MouseEvent =>
+						val delta = Vec3(drag.x, drag.y, drag.z) - _start
+						view.translateX = delta.x
+						view.translateY = delta.y
+
+						val transformed = trigs.points.grouped(3).flatMap { g =>
+							val p3 = view.localToParent(g(0), g(1), g(2))
+							Array(p3.getX.toFloat, p3.getY.toFloat, p3.getZ.toFloat)
+						}.toArray
+
+						println(s"points: ${transformed.length} ${transformed.par.min} ${transformed.par.max}")
+						buffer.clear()
+						trianglesCodec.write(Triangles(transformed), buffer)
+
+						drag.consume()
+					}
+					start.consume()
+				}
+			}
+
+
+
 		}
 
 
@@ -194,9 +238,10 @@ object MM extends JFXApp {
 		val S = Color.web("A76D34")
 		val E = Color.White
 
+
 		@volatile var _points: Array[Float] = Array.empty
 		@volatile var _normals: Array[Float] = Array.empty
-		@volatile var _faces: Array[Int] = Array.empty
+		//		@volatile var _faces: Array[Int] = Array.empty
 
 		@volatile var _particles: Array[Particle] = Array.empty
 
@@ -206,17 +251,18 @@ object MM extends JFXApp {
 
 		AnimationTimer { _ =>
 
-			if (_points.nonEmpty && _faces.nonEmpty && _normals.nonEmpty) {
+			if (meshInvalidated.getAndSet(false)) {
 				mesh.points = _points
 				mesh.getNormals.setAll(_normals: _*)
-				mesh.faces = _faces
-				_points = Array.empty
-				_normals = Array.empty
-				_faces = Array.empty
+				mesh.faces = mkFaces(_points.length / 3, mesh.getVertexFormat)
+				//				_faces = Array.empty
 				println("\t->Tick")
-				fpsLabel.text = s" ${(1000.0 / elapsed).round}FPS (${elapsed}ms)"
+				infoLabel.text = s"${(1000.0 / elapsed).round}FPS (${elapsed}ms)" +
+								 s"\nParticles : ${_particles.length}" +
+								 s"\nTriangles : ${_points.length / 3}" +
+								 s"\nVertices  : ${_points.length}"
 			}
-			if (showParticle.get() && !_particles.isEmpty) {
+			if (showParticle.get() && particleInvalidated.getAndSet(false)) {
 				_particles.foreach { x =>
 					val sphere = particles.computeIfAbsent(x.id, { k =>
 						new Sphere(10) {
@@ -234,20 +280,18 @@ object MM extends JFXApp {
 
 
 		unoptimisedThreadedContinuousRead(BasePath / "particles.mmf", particlesCodec) {
-			case Particles(xs) => _particles = xs
+			case Particles(xs) =>
+				_particles = xs
+				particleInvalidated.set(true)
 		} -> unoptimisedThreadedContinuousRead(BasePath / "triangles.mmf", meshTrianglesCodec) {
 			case MeshTriangles(vertices, normals) =>
-				def mkFaces(n: Int) = {
-					val faces = Array.ofDim[Int](n * 3)
-					for (i <- 0 until n) {
-						faces(i * 3 + 0) = i // vertices
-						faces(i * 3 + 1) = i // normals
-					}
-					faces
-				}
+
+
+
 				_points = vertices
 				_normals = normals
-				_faces = mkFaces(vertices.length / 3)
+				//				_faces = mkFaces(vertices.length / 3)
+				meshInvalidated.set(true)
 				val now = System.currentTimeMillis()
 				elapsed = now - last.getAndSet(now)
 				println(s"->Vertices: ${vertices.length} elasped=${elapsed}ms")

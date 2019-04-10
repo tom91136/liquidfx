@@ -23,8 +23,8 @@ import scalafx.scene.paint.{Color, PhongMaterial}
 import scalafx.scene.shape._
 import scalafx.stage.FileChooser
 import scalafx.util.Duration
-
 import Maths._
+import scalafx.scene.input.{KeyCode, KeyEvent}
 
 object Application extends JFXApp {
 
@@ -45,8 +45,8 @@ object Application extends JFXApp {
 	}
 
 
-	val slope = new TriangleMesh() {}
-	val slopeView = new MeshView(slope){
+	val slope     = new TriangleMesh() {}
+	val slopeView = new MeshView(slope) {
 		drawMode = DrawMode.Fill
 		material = new PhongMaterial(Color.rgb(0, 100, 100, 0.5))
 		depthTest = DepthTest.Enable
@@ -80,14 +80,14 @@ object Application extends JFXApp {
 				p.a.translateZ = p.position.z
 				val v = clamp(120, 255, p.velocity.lengthSquared * 100).toInt
 
-				val surface = if(p.surface ) {
+				val surface = if (p.surface) {
 					Color.Red
-				} else  {
+				} else {
 					Color.Blue
 				}
 
 
-				p.a.material = new PhongMaterial(surface)
+				p.a.material = new PhongMaterial(Color.rgb(v,v,v))
 
 			}
 		}
@@ -95,7 +95,7 @@ object Application extends JFXApp {
 
 
 	val maxIter = 2000
-	val r   = 7//28
+	val r       = 7 //28
 	val div = r / 2
 	val xs  = (for {
 		x <- 0 to 100 by r
@@ -126,10 +126,13 @@ object Application extends JFXApp {
 		translateZ = 100
 	}
 
+	val centre = new Sphere(20) {
+		material = new PhongMaterial(Color.White)
+	}
 
 	val container = new Box(500, 500, 180) {
 		drawMode = DrawMode.Line
-		translateX = 0//250
+		translateX = 0 //250
 
 		translateY = -350
 		translateZ = -30
@@ -182,8 +185,8 @@ object Application extends JFXApp {
 
 		val solver = new SphSolver(scale = 300f)
 		val obstacles = Array(
-//			Colliders.convexMeshCollider(bunnyMesh, mv),
-//			Colliders.convexMeshCollider(slope),
+			//			Colliders.convexMeshCollider(bunnyMesh, mv),
+			//			Colliders.convexMeshCollider(slope),
 			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
 			Colliders.convexBoxCollider(box2),
@@ -214,15 +217,31 @@ object Application extends JFXApp {
 				zRange = -diffZ to diffZ)
 		}
 
-
+		val G: Float = (6.674 * Math.pow(10, -11)).toFloat
 		(0 to maxIter).foldLeft(xs) { (acc, frame) =>
 
 			val start = System.currentTimeMillis()
 			val that = time("solve") {
+				val Gp = Vec3(
+					centre.getTranslateX,
+					centre.getTranslateY,
+					centre.getTranslateZ)
 				solver.advance(
 					dt = 0.0083f * deltaT.value,
 					iteration = iter.value,
-					constantForce = { p: Particle[Sphere] => Vec3(0f, p.mass * gravity.value, 0f) })(acc, obstacles)
+					constantForce = { p: Particle[Sphere] =>
+
+
+
+						val distSq = Gp.distanceSq(p.position)
+
+						val rHat = (p.position - Gp) / math.sqrt(distSq).toFloat
+
+						val attractor =  (rHat * (-100f * 1000f)   ) / distSq
+
+						//						1f / (Gp distance p.position)
+						attractor.clamp(-10, 10, -10, 10, -10, 10) + 		Vec3(0f, p.mass * gravity.value, 0f)
+					})(acc, obstacles)
 			}
 
 			val tCount = if (surface.value) {
@@ -295,16 +314,19 @@ object Application extends JFXApp {
 		Colliders.g,
 		box2,
 		box3,
+		centre,
 
 		//				plane,
 		//				box,
 	) {
 		Platform.runLater {
 			children ++= xs.map(_.a.delegate)
-			children += bunny
+//			children += bunny
 			children += slopeView
 		}
 	}, 500, 500)
+
+
 
 
 	stage = new PrimaryStage {
@@ -385,7 +407,19 @@ object Application extends JFXApp {
 				style = "-fx-font-family: 'monospaced'"
 			},
 
-		), 800, 800)
+		), 800, 800){
+			 onKeyPressed = { e: KeyEvent =>
+				e.code match {
+					case KeyCode.Up    => centre.translateY = centre.getTranslateY - 10
+					case KeyCode.Down  => centre.translateY = centre.getTranslateY + 10
+					case KeyCode.A  => centre.translateX = centre.getTranslateX - 10
+					case KeyCode.D => centre.translateX = centre.getTranslateX + 10
+					case KeyCode.W     => centre.translateZ = centre.getTranslateZ - 10
+					case KeyCode.S     => centre.translateZ = centre.getTranslateZ + 10
+				}
+				 e.consume()
+			}
+		}
 
 
 	}
