@@ -76,6 +76,8 @@ object Colliders {
 
 	val g     = new scalafx.scene.Group()
 	val timer = new Timer()
+	@volatile var prev = Vec3.Zero
+	@volatile var dv = Vec3.Zero
 
 	def convexMeshCollider(b: TriangleMesh, meshView: MeshView): Ray => Response = { r =>
 
@@ -107,16 +109,18 @@ object Colliders {
 		}
 
 
-		def collideTriangle2(unscaled: Triangle, p: Vec3, velocity: Vec3): Option[Response ] = {
+		def collideTriangle2(unscaled: Triangle, p: Vec3, velocity: Vec3): Option[Response] = {
 
 
-			val triangle = Triangle(
-				Vec3 (meshView.localToParent(unscaled.v0.x, unscaled.v0.y, unscaled.v0.z)),
-				Vec3 (meshView.localToParent(unscaled.v1.x, unscaled.v1.y, unscaled.v1.z)),
-				Vec3 (meshView.localToParent(unscaled.v2.x, unscaled.v2.y, unscaled.v2.z)),
-			)
-
-
+			val triangle = try {
+				Triangle(
+					Vec3(meshView.localToParent(unscaled.v0.x, unscaled.v0.y, unscaled.v0.z)),
+					Vec3(meshView.localToParent(unscaled.v1.x, unscaled.v1.y, unscaled.v1.z)),
+					Vec3(meshView.localToParent(unscaled.v2.x, unscaled.v2.y, unscaled.v2.z)),
+				)
+			} catch {
+				case _ => Triangle(Vec3.Zero, Vec3.Zero, Vec3.Zero)
+			}
 
 
 			//https://math.stackexchange.com/questions/588871/minimum-distance-between-point-and-face
@@ -126,28 +130,27 @@ object Colliders {
 
 			val t = (nn dot triangle.v0) - (nn dot p)
 			// p0 = intersection
-			val p0 = p +  (nn * t)
+			val p0 = p + (nn * t)
 
 
-			val B_ = triangle.b - triangle.a
-			val C_ = triangle.c - triangle.a
-			val X_ = p - triangle.a
+//			val B_ = triangle.b - triangle.a
+//			val C_ = triangle.c - triangle.a
+//			val X_ = p - triangle.a
+			//			val side = Mat3(
+			//				B_.x, B_.y, B_.z,
+			//				C_.x, C_.y, C_.z,
+			//				X_.x, X_.y, X_.z,
+			//			).det
 
-
-//			val side = Mat3(
-//				B_.x, B_.y, B_.z,
-//				C_.x, C_.y, C_.z,
-//				X_.x, X_.y, X_.z,
-//			).det
-
-			if (inTrig(triangle, p0) && p.distance(p0) < 5) {
+//			println(dv.magnitude * 2)
+			if (inTrig(triangle, p0) && p.distance(p0) < 3  ) {
 
 				//https://math.stackexchange.com/questions/13261/how-to-get-a-reflection-vector
 				val r = velocity - (nn * 2 * (velocity dot nn))
 
-//				println(s"R=$r V=$velocity")
+				//				println(s"R=$r V=$velocity")
 
-				Some(Response(prev, r)  )
+				Some(Response(p0, Vec3.Zero))
 			} else {
 				None
 			}
@@ -213,39 +216,38 @@ object Colliders {
 		//		println(s)
 
 
-//		s.foreach { case (Response(v, rr), c) =>
-//
-//			val s = new Sphere(2) {
-//				material = new PhongMaterial(c)
-//				translateX = v.x
-//				translateY = v.y
-//				translateZ = v.z
-//			}.delegate
-//
-//			val rs = new Sphere(2) {
-//				material = new PhongMaterial(Color.Green)
-//				translateX = v.x + rr.x * 6
-//				translateY = v.y + rr.y * 6
-//				translateZ = v.z + rr.z * 6
-//			}.delegate
-//			Platform.runLater {
-//				g.children.add(s)
-//				g.children.add(rs)
-//			}
-//
-//			timer.schedule(new TimerTask {
-//				override def run(): Unit = Platform.runLater {
-//					g.children.remove(s)
-//					g.children.remove(rs)
-//				}
-//			}, 1000)
-//
-//		}
-
+		//		s.foreach { case (Response(v, rr), c) =>
+		//
+		//			val s = new Sphere(2) {
+		//				material = new PhongMaterial(c)
+		//				translateX = v.x
+		//				translateY = v.y
+		//				translateZ = v.z
+		//			}.delegate
+		//
+		//			val rs = new Sphere(2) {
+		//				material = new PhongMaterial(Color.Green)
+		//				translateX = v.x + rr.x * 6
+		//				translateY = v.y + rr.y * 6
+		//				translateZ = v.z + rr.z * 6
+		//			}.delegate
+		//			Platform.runLater {
+		//				g.children.add(s)
+		//				g.children.add(rs)
+		//			}
+		//
+		//			timer.schedule(new TimerTask {
+		//				override def run(): Unit = Platform.runLater {
+		//					g.children.remove(s)
+		//					g.children.remove(rs)
+		//				}
+		//			}, 1000)
+		//
+		//		}
 
 
 		//		orig
-		s.map(x => x )
+		s.map(x => x)
 			.getOrElse(Response(rayOrigin, rayVector))
 
 

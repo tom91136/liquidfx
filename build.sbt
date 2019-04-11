@@ -12,7 +12,7 @@ osName := (System.getProperty("os.name") match {
 	case _                                  => throw new Exception("Unknown platform!")
 })
 
-lazy val javaFxVersion = "12-ea+12"
+lazy val javaFxVersion = "13-ea+4"
 
 lazy val commonSettings = Seq(
 	organization := "net.kurobako",

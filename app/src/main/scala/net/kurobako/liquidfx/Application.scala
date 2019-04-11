@@ -87,14 +87,14 @@ object Application extends JFXApp {
 				}
 
 
-				p.a.material = new PhongMaterial(Color.rgb(v,v,v))
+				p.a.material = new PhongMaterial(Color.rgb(v, v, v))
 
 			}
 		}
 	}
 
 
-	val maxIter = 2000
+	val maxIter = Int.MaxValue
 	val r       = 7 //28
 	val div = r / 2
 	val xs  = (for {
@@ -186,7 +186,7 @@ object Application extends JFXApp {
 		val solver = new SphSolver(scale = 300f)
 		val obstacles = Array(
 			//			Colliders.convexMeshCollider(bunnyMesh, mv),
-			//			Colliders.convexMeshCollider(slope),
+			Colliders.convexMeshCollider(slope, slopeView),
 			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
 			Colliders.convexBoxCollider(box2),
@@ -220,6 +220,15 @@ object Application extends JFXApp {
 		val G: Float = (6.674 * Math.pow(10, -11)).toFloat
 		(0 to maxIter).foldLeft(xs) { (acc, frame) =>
 
+
+			val now =  Vec3(
+				slopeView.getTranslateX,
+				slopeView.getTranslateY,
+				slopeView.getTranslateZ)
+			Colliders.dv = (Colliders.prev - now)
+			Colliders.prev = now
+			println("\t"+Colliders.dv)
+
 			val start = System.currentTimeMillis()
 			val that = time("solve") {
 				val Gp = Vec3(
@@ -232,15 +241,14 @@ object Application extends JFXApp {
 					constantForce = { p: Particle[Sphere] =>
 
 
-
 						val distSq = Gp.distanceSq(p.position)
 
 						val rHat = (p.position - Gp) / math.sqrt(distSq).toFloat
 
-						val attractor =  (rHat * (-100f * 1000f)   ) / distSq
+						val attractor = (rHat * (-100f * 1000f)) / distSq
 
 						//						1f / (Gp distance p.position)
-						attractor.clamp(-10, 10, -10, 10, -10, 10) + 		Vec3(0f, p.mass * gravity.value, 0f)
+						attractor.clamp(-10, 10, -10, 10, -10, 10) + Vec3(0f, p.mass * gravity.value, 0f)
 					})(acc, obstacles)
 			}
 
@@ -321,12 +329,10 @@ object Application extends JFXApp {
 	) {
 		Platform.runLater {
 			children ++= xs.map(_.a.delegate)
-//			children += bunny
+			//			children += bunny
 			children += slopeView
 		}
 	}, 500, 500)
-
-
 
 
 	stage = new PrimaryStage {
@@ -407,17 +413,20 @@ object Application extends JFXApp {
 				style = "-fx-font-family: 'monospaced'"
 			},
 
-		), 800, 800){
-			 onKeyPressed = { e: KeyEvent =>
+		), 800, 800) {
+			onKeyPressed = { e: KeyEvent =>
 				e.code match {
-					case KeyCode.Up    => centre.translateY = centre.getTranslateY - 10
-					case KeyCode.Down  => centre.translateY = centre.getTranslateY + 10
-					case KeyCode.A  => centre.translateX = centre.getTranslateX - 10
-					case KeyCode.D => centre.translateX = centre.getTranslateX + 10
-					case KeyCode.W     => centre.translateZ = centre.getTranslateZ - 10
-					case KeyCode.S     => centre.translateZ = centre.getTranslateZ + 10
+					case KeyCode.Up   => slopeView.translateY = slopeView.getTranslateY - 8
+					case KeyCode.Down => slopeView.translateY = slopeView.getTranslateY + 8
+					case KeyCode.A    => slopeView.translateX = slopeView.getTranslateX - 8
+					case KeyCode.D    => slopeView.translateX = slopeView.getTranslateX + 8
+					case KeyCode.W    => slopeView.translateZ = slopeView.getTranslateZ - 8
+					case KeyCode.S    => slopeView.translateZ = slopeView.getTranslateZ + 8
+					case _            =>
 				}
-				 e.consume()
+
+
+				e.consume()
 			}
 		}
 

@@ -30,6 +30,7 @@ object MM extends JFXApp {
 		case unix if unix.contains("nix") ||
 					 unix.contains("nux") ||
 					 unix.contains("aix") => File("/home/tom/libfluid/cmake-build-release/samples/")
+		case mac if mac.contains("mac")   => File("/Users/tom/libfluid/cmake-build-release/samples/")
 		case unknown                      => throw new Exception(s"Unknown os:$unknown")
 	}
 
@@ -62,7 +63,10 @@ object MM extends JFXApp {
 	val meshView = new MeshView(mesh) {
 		cullFace = CullFace.None
 		drawMode <== when(wireFrame) choose DrawMode.Line otherwise DrawMode.Fill
-		material = new PhongMaterial(Color.rgb(0, 119, 190, 1)) {
+
+		//		private val colour: Color = Color.rgb(0, 119, 190, 1)
+		private val colour: Color = Color.rgb(105, 52, 15, 1)
+		material = new PhongMaterial(colour) {
 			specularColor = Color.rgb(255, 255, 255, 1)
 		}
 	}
@@ -228,7 +232,6 @@ object MM extends JFXApp {
 					start.consume()
 				}
 			}
-
 
 
 		}

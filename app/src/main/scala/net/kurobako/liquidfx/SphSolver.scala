@@ -173,7 +173,7 @@ class SphSolver(val h: Float = 0.1f, // Particle(smoothing kernel) size
 				a.particle.copy(
 					position = a.now * scale,
 					velocity = deltaX *+ (1f / dt, a.velocity) * Vd,
-					surface = mc.distance(a.now) > 0.09f
+//					surface = mc.distance(a.now) > 0.09f
 
 					//					neighbours = a.neighbours.map(_.particle)
 				)
@@ -184,7 +184,6 @@ class SphSolver(val h: Float = 0.1f, // Particle(smoothing kernel) size
 		findNeighbour(atoms)
 		// hotspot 90%
 		for (i <- 0 until iteration) {
-			println(s"@$i")
 			solveLambda(atoms)
 			solveDeltaP(atoms)
 			solveCollisionAndUpdate(atoms)
@@ -196,12 +195,19 @@ class SphSolver(val h: Float = 0.1f, // Particle(smoothing kernel) size
 
 object SphSolver {
 
+
+	sealed trait Type
+	case object Fluid extends Type
+	case object Solid extends Type
+
+
 	case class Particle[A](a: A,
 						   mass: Float = 1,
 						   surface: Boolean = false,
 						   position: Vec3,
 						   velocity: Vec3 = Vec3.Zero,
-						   neighbours: Seq[Particle[A]] = Nil,
+//						   neighbours: Seq[Particle[A]] = Nil,
+						   tpe : Type = Fluid,
 						  )
 
 	case class Ray(prev: Vec3, origin: Vec3, velocity: Vec3) {}
