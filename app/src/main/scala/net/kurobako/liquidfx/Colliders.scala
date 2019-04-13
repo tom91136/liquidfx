@@ -129,8 +129,10 @@ object Colliders {
 
 
 			val t = (nn dot triangle.v0) - (nn dot p)
-			// p0 = intersection
-			val p0 = p + (nn * t)
+
+
+
+
 
 
 //			val B_ = triangle.b - triangle.a
@@ -143,17 +145,24 @@ object Colliders {
 			//			).det
 
 //			println(dv.magnitude * 2)
-			if (inTrig(triangle, p0) && p.distance(p0) < 3  ) {
 
-				//https://math.stackexchange.com/questions/13261/how-to-get-a-reflection-vector
-				val r = velocity - (nn * 2 * (velocity dot nn))
+			if( -10 <= t && t < 10 ){
+				// p0 = intersection
+				val p0 = p + (nn * t)
+				if (inTrig(triangle, p0)   ) {
 
-				//				println(s"R=$r V=$velocity")
+					//https://math.stackexchange.com/questions/13261/how-to-get-a-reflection-vector
+					val r = velocity - (nn * 2 * (velocity dot nn))
 
-				Some(Response(p0, Vec3.Zero))
-			} else {
-				None
-			}
+					//				println(s"R=$r V=$velocity")
+
+					Some(Response(p0, r))
+				} else {
+					None
+				}
+			} else None
+
+
 		}
 
 		def collideTriangle(vertex0: Vec3, vertex1: Vec3, vectex2: Vec3): Option[Vec3] = {

@@ -238,6 +238,26 @@ object StructDefs {
 							normals(i * floatPerTrig + 6) = readStaged(buffer, n2x)
 							normals(i * floatPerTrig + 7) = readStaged(buffer, n2y)
 							normals(i * floatPerTrig + 8) = readStaged(buffer, n2z)
+
+							val n =
+								vertices(i * floatPerTrig + 0)
+							+vertices(i * floatPerTrig + 1)
+							+vertices(i * floatPerTrig + 2)
+							+vertices(i * floatPerTrig + 3)
+							+vertices(i * floatPerTrig + 4)
+							+vertices(i * floatPerTrig + 5)
+							+vertices(i * floatPerTrig + 6)
+							+vertices(i * floatPerTrig + 7)
+							+vertices(i * floatPerTrig + 8)
+
+
+//							println(s"$i => " +
+//									s"( ${vertices(i * floatPerTrig + 0)} ${vertices(i * floatPerTrig + 1)} ${vertices(i * floatPerTrig + 2)} ) " +
+//									s"( ${vertices(i * floatPerTrig + 3)} ${vertices(i * floatPerTrig + 4)} ${vertices(i * floatPerTrig + 5)} ) " +
+//									s"( ${vertices(i * floatPerTrig + 6)} ${vertices(i * floatPerTrig + 7)} ${vertices(i * floatPerTrig + 8)} ) | " +
+//							s"\n( ${normals(i * floatPerTrig + 0)} ${normals(i * floatPerTrig + 1)} ${normals(i * floatPerTrig + 2)} ) " +
+//							s"( ${normals(i * floatPerTrig + 3)} ${normals(i * floatPerTrig + 4)} ${normals(i * floatPerTrig + 5)} ) " +
+//							s"( ${normals(i * floatPerTrig + 6)} ${normals(i * floatPerTrig + 7)} ${normals(i * floatPerTrig + 8)} )")
 						}
 						MeshTriangles(vertices, normals)
 					}

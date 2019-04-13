@@ -197,11 +197,9 @@ object MM extends JFXApp {
 		Platform.runLater {
 
 
-			val (node, view, trigs) = Bunny.makeBunny()
+			val (node, view, trigs) = Bunny.makeMug()
 
-			view.scaleX = 4.8
-			view.scaleY = 4.8
-			view.scaleZ = 4.8
+
 			view.translateY = 200
 			view.translateX = -100
 			view.translateZ = 200
@@ -297,7 +295,7 @@ object MM extends JFXApp {
 				meshInvalidated.set(true)
 				val now = System.currentTimeMillis()
 				elapsed = now - last.getAndSet(now)
-				println(s"->Vertices: ${vertices.length} elasped=${elapsed}ms")
+				println(s"->Vertices: ${vertices.length} elasped=${elapsed}ms ")
 		}
 
 	}
