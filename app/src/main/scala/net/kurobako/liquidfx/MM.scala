@@ -4,26 +4,40 @@ import java.nio.file.StandardOpenOption
 import java.nio.{ByteBuffer, ByteOrder}
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
+import java.util.concurrent.locks.ReentrantLock
 
 import better.files._
 import com.google.common.base.StandardSystemProperty
+import javafx.scene.paint.Color
 import net.kurobako.liquidfx.Maths.{Triangle, Vec3}
 import net.kurobako.liquidfx.StructDefs._
 import scalafx.Includes.{handle, _}
 import scalafx.animation.AnimationTimer
 import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
-import scalafx.beans.property.BooleanProperty
-import scalafx.geometry.{Insets, Point3D, Pos}
-import scalafx.scene.control.Label
+import scalafx.beans.binding.NumberExpression
+import scalafx.beans.property._
+import scalafx.geometry.{Insets, Pos}
+import scalafx.scene.control.{ColorPicker, Label, Slider}
 import scalafx.scene.input.{KeyCode, KeyEvent, MouseEvent}
-import scalafx.scene.layout.{Priority, StackPane, VBox}
-import scalafx.scene.paint.{Color, PhongMaterial}
+import scalafx.scene.layout.{HBox, Priority, StackPane, VBox}
+import scalafx.scene.paint.PhongMaterial
 import scalafx.scene.shape._
-import scalafx.scene.{AmbientLight, Group, PointLight, Scene, SubScene}
+import scalafx.scene.{Group, Scene, SubScene}
 
 
 object MM extends JFXApp {
+
+	private val solverIter  = IntegerProperty(5)
+	private val solverStep  = FloatProperty(1.2f)
+	private val solverScale = FloatProperty(1000f)
+	private val surfaceRes  = FloatProperty(1)
+	private val gravity     = FloatProperty(9.8f)
+	private val colour      = ObjectProperty[Color](Color.AQUA)
+
+	private val showParticle = BooleanProperty(false)
+	private val flatShading  = BooleanProperty(false)
+	private val wireFrame    = BooleanProperty(false)
 
 	private val BasePath = StandardSystemProperty.OS_NAME.value.toLowerCase match {
 		case win if win.contains("win")   => File("C:\\Users\\Tom\\libfluid\\cmake-build-release\\samples\\")
@@ -34,7 +48,6 @@ object MM extends JFXApp {
 		case unknown                      => throw new Exception(s"Unknown os:$unknown")
 	}
 
-
 	def time[R](name: String)(block: => R): R = {
 		val t0 = System.nanoTime()
 		val result = block
@@ -43,9 +56,7 @@ object MM extends JFXApp {
 		result
 	}
 
-	private val showParticle = BooleanProperty(false)
-	private val flatShading  = BooleanProperty(false)
-	private val wireFrame    = BooleanProperty(false)
+
 	val meshInvalidated    : AtomicBoolean = new AtomicBoolean(true)
 	val particleInvalidated: AtomicBoolean = new AtomicBoolean(true)
 
@@ -65,9 +76,9 @@ object MM extends JFXApp {
 		drawMode <== when(wireFrame) choose DrawMode.Line otherwise DrawMode.Fill
 
 		//		private val colour: Color = Color.rgb(0, 119, 190, 1)
-		private val colour: Color = Color.rgb(105, 52, 15, 1)
-		material = new PhongMaterial(colour) {
-			specularColor = Color.rgb(255, 255, 255, 1)
+		material = new PhongMaterial() {
+			diffuseColor <== colour
+			specularColor = Color.WHITE
 		}
 	}
 
@@ -84,63 +95,110 @@ object MM extends JFXApp {
 	)
 
 
-	def openMmf(path: File): ByteBuffer = {
+	def openSink(path: File, size: Int): ByteBuffer = {
 		import java.nio.channels.FileChannel
 		path.createFileIfNotExists()
-		val maxMMF = 16 * 4 * 50000
-		path.writeByteArray(Array.ofDim(maxMMF))
-		println(s"collider = ${path.size.toFloat / 1024 / 1024}MB")
+		path.writeByteArray(Array.ofDim(size))
 		val filechannel = FileChannel.open(path.path,
 			StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE, StandardOpenOption.READ)
-		val buffer = filechannel.map(FileChannel.MapMode.READ_WRITE, 0, maxMMF)
+		val buffer = filechannel.map(FileChannel.MapMode.READ_WRITE, 0, size)
+		buffer.order(ByteOrder.LITTLE_ENDIAN)
+		buffer.clear()
+		buffer
+	}
+	def openSource(path: File): ByteBuffer = {
+		import java.nio.channels.FileChannel
+		val filechannel = FileChannel.open(path.path, StandardOpenOption.READ)
+		val buffer = filechannel.map(FileChannel.MapMode.READ_ONLY, 0, filechannel.size)
 		buffer.order(ByteOrder.LITTLE_ENDIAN)
 		buffer.clear()
 		buffer
 	}
 
 
-	def readMmf(path: File)(f: ByteBuffer => Unit) = {
-		import java.nio.channels.FileChannel
-		val filechannel = FileChannel.open(path.path, StandardOpenOption.READ)
-		val buffer = filechannel.map(FileChannel.MapMode.READ_ONLY, 0, filechannel.size)
-		buffer.order(ByteOrder.LITTLE_ENDIAN)
-		while (true) {
-			try {
-				//				buffer.load()
-				f(buffer)
-			} catch {
-				case e: Throwable     => e.printStackTrace()
-				case e: InternalError => println("VM : " + e.getMessage)
-			} finally {
-				buffer.clear()
-			}
-		}
+	//	def readMmf(path: File)(f: ByteBuffer => Unit) = {
+	//		import java.nio.channels.FileChannel
+	//		val filechannel = FileChannel.open(path.path, StandardOpenOption.READ)
+	//		val buffer = filechannel.map(FileChannel.MapMode.READ_ONLY, 0, filechannel.size)
+	//		buffer.order(ByteOrder.LITTLE_ENDIAN)
+	//		while (true) {
+	//			try {
+	//				f(buffer)
+	//			} catch {
+	//				case e: Throwable     => println("Warn:" + e.getClass + " -> " + e.getMessage)
+	//				case e: InternalError => println("VM : " + e.getMessage)
+	//			} finally {
+	//				buffer.clear()
+	//			}
+	//		}
+	//
+	//	}
 
-	}
+	private def makeScene(suspend: Boolean) = StructDefs.Scene(
+		meta = SceneMeta(
+			suspend = suspend, terminate = false,
+			solverIter.value, solverStep.value, solverScale.value,
+			surfaceRes.value, gravity.value),
+		wells = Array(
+			Well(Vec3(300), -1000f * 1000f * 50),
+			Well(Vec3(1000, 1000, 1000), 1000f * 1000f * 10)
+		),
+		sources = Array(Source(Vec3(42), 42, 42), Source(Vec3(32), 32, 32))
+	)
 
-	private def unoptimisedThreadedContinuousRead[A](file: File, f: StructCodec[Header |> A, A])
-													(h: A => Unit): Unit = {
+	private def doUpdate(codec: StructCodec[Header |> MeshTriangles, MeshTriangles],
+						 sceneCodec: StructCodec[StructDefs.Scene, StructDefs.Scene])
+						(action: MeshTriangles => Unit): Unit = {
 		new Thread({ () =>
 			@volatile var last = 0L
-			readMmf(file) {
-				buffer =>
+			val triangleSource = openSource(BasePath / "triangles.mmf")
+			val sceneSink = openSink(BasePath / "scene.mmf", 8192) // FIXME compute from def
+			while (true) {
+				try {
 					Thread.sleep((1000.0 / 60 / 2).toLong)
-
-					val (header, g) = f.read(buffer)
+					val (header, readTrigs) = codec.read(triangleSource)
 					val start = header.timestamp
-					if (start != last) {
+					if (start != last && header.written == header.entries) {
 						last = start
-						time(file.name) {
-							val a = g()
-							h(a)
+						sceneSink.clear()
+						sceneCodec.write(makeScene(suspend = true), sceneSink)
+						try {
+							time("doUpdate") {
+								action(readTrigs())
+							}
+						} finally {
+							sceneSink.clear()
+							sceneCodec.write(makeScene(suspend = false), sceneSink)
 						}
 					}
+				} catch {
+					case e: Throwable     => println("Warn:" + e.getClass + " -> " + e.getMessage)
+					case e: InternalError => println("VM : " + e.getMessage)
+				} finally {
+					triangleSource.clear()
+					sceneSink.clear()
+
+				}
 			}
 		}).start()
 	}
 
 	val subScene: SubScene = SceneControl.mkScene(group, 500, 500)
 	val infoLabel          = new Label() {padding = Insets(8)}
+
+	def mkSlider[T: Numeric](source: Property[T, Number] with NumberExpression, min: Float, max: Float, name: String): HBox = {
+		def valueWithName = f"$name(${source.floatValue}%.2f):"
+		new HBox(
+			new Label(valueWithName) {
+				prefWidth = 200
+				source.onChange {text = valueWithName}
+			}, new Slider(min, max, source.floatValue()) {
+				prefWidth = 450
+				source <== value
+			},
+		)
+	}
+
 	stage = new PrimaryStage {
 		title = "SPH simulation"
 		scene = new Scene(
@@ -148,13 +206,30 @@ object MM extends JFXApp {
 			new StackPane {
 				children = Seq(
 					subScene,
-					infoLabel
+					new HBox(
+						new VBox(
+							mkSlider(solverIter, 0, 100, "Solver Iter"),
+							mkSlider(solverScale, 100, 5000, "Solver scale"),
+							mkSlider(solverStep, 0.1f, 10, "Solver step"),
+							mkSlider(surfaceRes, 0.1f, 8, "Surface res"),
+							mkSlider(gravity, -20, 20, "Graivty"),
+							new ColorPicker(colour.value) {
+								colour <== value
+							}
+						) {
+							pickOnBounds = false
+							hgrow = Priority.Always
+						},
+						infoLabel
+					) {
+						pickOnBounds = false
+					}
 				)
 				alignment = Pos.TopLeft
 				subScene.width <== width
 				subScene.height <== height
 				vgrow = Priority.Always
-			}, 800, 800) {
+			}, 900, 900) {
 			onKeyPressed = { e: KeyEvent =>
 				e.code match {
 					case KeyCode.S => meshView.visible = !meshView.visible.value
@@ -183,14 +258,26 @@ object MM extends JFXApp {
 		}
 	}
 
+
 	val run = for {
-		headerDef <- StructDefs.readStructDef[Header](BasePath / "header.json")
-		meshTrianglesDef <- StructDefs.readStructDef[MeshTriangles](BasePath / "mesh_triangle.json")
-		trianglesDef <- StructDefs.readStructDef[Triangles](BasePath / "triangle.json")
-		particlesDef <- StructDefs.readStructDef[Particles](BasePath / "particle.json")
+
+		defs <- StructDefs.readStructDef(BasePath / "defs.json")
+
+		headerDef <- defs.resolve[Header]("header")
+
+		wellDef <- defs.resolve[Array[Well]]("well")
+		sourceDef <- defs.resolve[Array[Source]]("source")
+		sceneMetaDef <- defs.resolve[SceneMeta]("sceneMeta")
+
+		trianglesDef <- defs.resolve[Triangles]("triangle")
+		particlesDef <- defs.resolve[Particles]("particle")
+		meshTrianglesDef <- defs.resolve[MeshTriangles]("meshTriangle")
+
+		sceneCodec <- StructDefs.Scene(sceneMetaDef, headerDef, wellDef, sourceDef)
+		particlesCodec <- Particles(headerDef, particlesDef)
 		trianglesCodec <- Triangles(headerDef, trianglesDef)
 		meshTrianglesCodec <- MeshTriangles(headerDef, meshTrianglesDef)
-		particlesCodec <- Particles(headerDef, particlesDef)
+
 	} yield {
 
 
@@ -199,13 +286,12 @@ object MM extends JFXApp {
 
 			val (node, view, trigs) = Bunny.makeMug()
 
-
 			view.translateY = 200
 			view.translateX = -100
 			view.translateZ = 200
 			group.children += node
 
-			val buffer = openMmf(BasePath / "colliders.mmf")
+			val buffer = openSink(BasePath / "colliders.mmf", size = 16 * 4 * 50000)
 
 			group.onMouseReleased = handle {group.onMouseDragged = null}
 			group.onMouseClicked = { start: MouseEvent =>
@@ -237,7 +323,7 @@ object MM extends JFXApp {
 
 		val particles = new ConcurrentHashMap[Long, Sphere]()
 		val S = Color.web("A76D34")
-		val E = Color.White
+		val E = Color.WHITE
 
 
 		@volatile var _points: Array[Float] = Array.empty
@@ -250,12 +336,27 @@ object MM extends JFXApp {
 		val last: AtomicLong = new AtomicLong(System.currentTimeMillis())
 
 
+		val lock = new ReentrantLock()
+
 		AnimationTimer { _ =>
 
 			if (meshInvalidated.getAndSet(false)) {
-				mesh.points = _points
-				mesh.getNormals.setAll(_normals: _*)
-				mesh.faces = mkFaces(_points.length / 3, mesh.getVertexFormat)
+
+				try {
+					lock.lock()
+
+					mesh.points = _points
+					mesh.getNormals.setAll(_normals: _*)
+					mesh.faces = mkFaces(_points.length / 3, mesh.getVertexFormat)
+				} finally {
+					lock.unlock()
+				}
+
+				//				mesh.points = pointsCopy
+				//				mesh.getNormals.setAll(normalsCopy: _*)
+				//				mesh.faces = mkFaces(pointsCopy.length / 3, mesh.getVertexFormat)
+
+
 				//				_faces = Array.empty
 				println("\t->Tick")
 				infoLabel.text = s"${(1000.0 / elapsed).round}FPS (${elapsed}ms)" +
@@ -279,23 +380,16 @@ object MM extends JFXApp {
 			}
 		}.start()
 
-
-		unoptimisedThreadedContinuousRead(BasePath / "particles.mmf", particlesCodec) {
-			case Particles(xs) =>
-				_particles = xs
-				particleInvalidated.set(true)
-		} -> unoptimisedThreadedContinuousRead(BasePath / "triangles.mmf", meshTrianglesCodec) {
+		doUpdate(meshTrianglesCodec, sceneCodec) {
 			case MeshTriangles(vertices, normals) =>
-
-
-
-				_points = vertices
-				_normals = normals
-				//				_faces = mkFaces(vertices.length / 3)
-				meshInvalidated.set(true)
-				val now = System.currentTimeMillis()
-				elapsed = now - last.getAndSet(now)
-				println(s"->Vertices: ${vertices.length} elasped=${elapsed}ms ")
+				try {
+					lock.lock()
+					_points = vertices
+					_normals = normals
+					meshInvalidated.set(true)
+					val now = System.currentTimeMillis()
+					elapsed = now - last.getAndSet(now)
+				} finally lock.unlock()
 		}
 
 	}

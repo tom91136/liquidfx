@@ -18,7 +18,8 @@ class StructDefSpec extends FlatSpec with Matchers {
 
 	val HeaderDef: StructDef[Header] = StructDef[Header](Vector(
 		Entry("timestamp", 8),
-		Entry("entries", 8)))
+		Entry("entries", 8),
+		Entry("written", 8)), 24)
 
 	val TrianglesDef: StructDef[Triangles] = StructDef[Triangles](Vector(
 		Entry("v0.x", 4),
@@ -30,7 +31,7 @@ class StructDefSpec extends FlatSpec with Matchers {
 		Entry("v2.x", 4),
 		Entry("v2.y", 4),
 		Entry("v2.z", 4),
-	))
+	), 36)
 
 	val ParticlesDef: StructDef[Particles] = StructDef[Particles](Vector(
 		Entry("id", 8),
@@ -42,7 +43,7 @@ class StructDefSpec extends FlatSpec with Matchers {
 		Entry("velocity.x", 4),
 		Entry("velocity.y", 4),
 		Entry("velocity.z", 4)
-	))
+	), 24 + 4 + 4 + 8)
 
 	implicit val vec3Eq: Equality[Vec3] = (a: Vec3, b: Any) => b match {
 		case Vec3(x, y, z) =>

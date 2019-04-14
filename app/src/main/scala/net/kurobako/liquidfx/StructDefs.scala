@@ -14,6 +14,15 @@ object StructDefs {
 	import upickle.default.{macroRW, ReadWriter => RW, _}
 
 
+	@inline def readBooleanTruncated(buffer: ByteBuffer, size: Long): Boolean = {
+		readIntTruncated(buffer, size) == 0
+	}
+
+	@inline def writeBooleanTruncated(buffer: ByteBuffer, size: Long, data: Boolean): Unit = {
+		writeIntTruncated(buffer, size, if (data) 1 else 0)
+	}
+
+
 	@inline def readLongPromoted(buffer: ByteBuffer, size: Long): Long = {
 		(size: @switch) match {
 			case 1   => buffer.get.toLong
@@ -91,22 +100,159 @@ object StructDefs {
 	sealed trait Struct
 
 	trait StructCodec[A, B] {
+
 		def read(buffer: ByteBuffer): A
 		def write(b: B, buffer: ByteBuffer): Unit
 	}
 
-	case class Header(timestamp: Long, entries: Int) extends Struct
+	case class Well(centre: Vec3, force: Float) extends Struct
+	object Well {
+		def apply(headerDef: StructDef[Header], sdef: StructDef[Array[Well]]):
+		Either[Throwable, StructCodec[Array[Well], Array[Well]]] = for {
+			wellx <- sdef.resolveLength("well.x", 0)
+			welly <- sdef.resolveLength("well.y", 1)
+			wellz <- sdef.resolveLength("well.z", 2)
+			force <- sdef.resolveLength("force", 3)
+			header <- Header(headerDef)
+		} yield new StructCodec[Array[Well], Array[Well]] {
+			override def read(buffer: ByteBuffer): Array[Well] =
+				Array.fill(header.read(buffer).entries) {
+					Well(Vec3(
+						readFloatTruncated(buffer, wellx),
+						readFloatTruncated(buffer, welly),
+						readFloatTruncated(buffer, wellz)
+					), readFloatTruncated(buffer, force))
+				}
+			override def write(wells: Array[Well], buffer: ByteBuffer): Unit = {
+				header.write(Header(wells.length), buffer)
+				wells.foreach { well =>
+					writeFloatTruncated(buffer, wellx, well.centre.x)
+					writeFloatTruncated(buffer, welly, well.centre.y)
+					writeFloatTruncated(buffer, wellz, well.centre.z)
+					writeFloatTruncated(buffer, force, well.force)
+				}
+			}
+		}
+	}
+
+	case class Source(centre: Vec3, rate: Long, tag: Long) extends Struct
+	object Source {
+		def apply(headerDef: StructDef[Header], sdef: StructDef[Array[Source]]):
+		Either[Throwable, StructCodec[Array[Source], Array[Source]]] = for {
+			sourcex <- sdef.resolveLength("source.x", 0)
+			sourcey <- sdef.resolveLength("source.y", 1)
+			sourcez <- sdef.resolveLength("source.z", 2)
+			rate <- sdef.resolveLength("rate", 3)
+			tag <- sdef.resolveLength("tag", 4)
+			header <- Header(headerDef)
+		} yield new StructCodec[Array[Source], Array[Source]] {
+			override def read(buffer: ByteBuffer): Array[Source] =
+				Array.fill(header.read(buffer).entries) {
+					Source(
+						centre = Vec3(
+							readFloatTruncated(buffer, sourcex),
+							readFloatTruncated(buffer, sourcey),
+							readFloatTruncated(buffer, sourcez)
+						),
+						rate = readLongPromoted(buffer, rate),
+						tag = readLongPromoted(buffer, tag))
+				}
+			override def write(sources: Array[Source], buffer: ByteBuffer): Unit = {
+				header.write(Header(sources.length), buffer)
+				sources.foreach { source =>
+					writeFloatTruncated(buffer, sourcex, source.centre.x)
+					writeFloatTruncated(buffer, sourcey, source.centre.y)
+					writeFloatTruncated(buffer, sourcez, source.centre.z)
+					writeLongTruncated(buffer, rate, source.rate)
+					writeLongTruncated(buffer, tag, source.tag)
+				}
+			}
+		}
+	}
+
+
+	case class SceneMeta(suspend: Boolean,
+						 terminate: Boolean,
+						 solverIter: Int,
+						 solverStep: Float,
+						 solverScale: Float,
+						 surfaceRes: Float,
+						 gravity: Float) extends Struct
+
+	object SceneMeta {
+		def apply(sdef: StructDef[SceneMeta]): Either[Throwable, StructCodec[SceneMeta, SceneMeta]] = for {
+			suspend <- sdef.resolveLength("suspend", 0)
+			terminate <- sdef.resolveLength("terminate", 1)
+			solverIter <- sdef.resolveLength("solverIter", 2)
+			solverStep <- sdef.resolveLength("solverStep", 3)
+			solverScale <- sdef.resolveLength("solverScale", 4)
+			surfaceRes <- sdef.resolveLength("surfaceRes", 5)
+			gravity <- sdef.resolveLength("gravity", 6)
+		} yield new StructCodec[SceneMeta, SceneMeta] {
+			override def read(buffer: ByteBuffer): SceneMeta = SceneMeta(
+				readBooleanTruncated(buffer, suspend),
+				readBooleanTruncated(buffer, terminate),
+				readIntTruncated(buffer, solverIter),
+				readFloatTruncated(buffer, solverStep),
+				readFloatTruncated(buffer, solverScale),
+				readFloatTruncated(buffer, surfaceRes),
+				readFloatTruncated(buffer, gravity),
+			)
+			override def write(b: SceneMeta, buffer: ByteBuffer): Unit = {
+				writeBooleanTruncated(buffer, suspend, b.suspend)
+				writeBooleanTruncated(buffer, terminate, b.terminate)
+				writeIntTruncated(buffer, solverIter, b.solverIter)
+				writeFloatTruncated(buffer, solverStep, b.solverStep)
+				writeFloatTruncated(buffer, solverScale, b.solverScale)
+				writeFloatTruncated(buffer, surfaceRes, b.surfaceRes)
+				writeFloatTruncated(buffer, gravity, b.gravity)
+			}
+		}
+	}
+
+	case class Scene(meta: SceneMeta,
+					 wells: Array[Well],
+					 sources: Array[Source]) extends Struct
+
+	object Scene {
+		def apply(metaDef: StructDef[SceneMeta],
+				  headerDef: StructDef[Header],
+				  wellDef: StructDef[Array[Well]],
+				  sourceDef: StructDef[Array[Source]]): Either[Throwable, StructCodec[Scene, Scene]] = for {
+			meta <- SceneMeta(metaDef)
+			wellCodec <- Well(headerDef, wellDef)
+			sourceCodec <- Source(headerDef, sourceDef)
+		} yield new StructCodec[Scene, Scene] {
+			override def read(buffer: ByteBuffer): Scene = Scene(
+				meta.read(buffer),
+				wellCodec.read(buffer),
+				sourceCodec.read(buffer)
+			)
+			override def write(b: Scene, buffer: ByteBuffer): Unit = {
+				meta.write(b.meta, buffer)
+				wellCodec.write(b.wells, buffer)
+				sourceCodec.write(b.sources, buffer)
+			}
+		}
+	}
+
+
+	case class Header(timestamp: Long, entries: Int, written: Int) extends Struct
 	object Header {
+		def apply(n: Int): Header = new Header(System.currentTimeMillis(), n, n)
 		def apply(sdef: StructDef[Header]): Either[Throwable, StructCodec[Header, Header]] = for {
 			timestamp <- sdef.resolveLength("timestamp", 0)
 			entries <- sdef.resolveLength("entries", 1)
+			written <- sdef.resolveLength("written", 2)
 		} yield new StructCodec[Header, Header] {
 			override def read(buffer: ByteBuffer): Header = Header(
 				readLongPromoted(buffer, timestamp),
-				readIntTruncated(buffer, entries))
+				readIntTruncated(buffer, entries),
+				readIntTruncated(buffer, written))
 			override def write(b: Header, buffer: ByteBuffer): Unit = {
 				writeLongTruncated(buffer, size = timestamp, data = b.timestamp)
 				writeIntTruncated(buffer, size = entries, data = b.entries)
+				writeIntTruncated(buffer, size = entries, data = b.written)
 			}
 		}
 	}
@@ -126,7 +272,7 @@ object StructDefs {
 			v2x <- sdef.resolveLength("v2.x", 6)
 			v2y <- sdef.resolveLength("v2.y", 7)
 			v2z <- sdef.resolveLength("v2.z", 8)
-			headerFormatter <- Header(headerDef)
+			headerCodec <- Header(headerDef)
 		} yield {
 			val readStaged = mkStagedReadFloatTruncated(
 				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z,
@@ -137,7 +283,7 @@ object StructDefs {
 			val floatPerTrig = 3 * 3
 			new StructCodec[Header |> Triangles, Triangles] {
 				override def read(buffer: ByteBuffer): Header |> Triangles = {
-					val header = headerFormatter.read(buffer)
+					val header = headerCodec.read(buffer)
 					header -> { () =>
 						val vertices = Array.ofDim[Float](header.entries * floatPerTrig)
 						for (i <- 0 until header.entries) {
@@ -157,9 +303,7 @@ object StructDefs {
 
 				override def write(b: Triangles, buffer: ByteBuffer): Unit = {
 					val entries = b.vertices.length / floatPerTrig
-					val header = Header(System.currentTimeMillis(), entries)
-					headerFormatter.write(header, buffer)
-					println("Write header=" + header)
+					headerCodec.write(Header(entries), buffer)
 					for (i <- 0 until entries) {
 						writeStaged(buffer, v0x, b.vertices(i * floatPerTrig + 0))
 						writeStaged(buffer, v0y, b.vertices(i * floatPerTrig + 1))
@@ -202,7 +346,7 @@ object StructDefs {
 			n2y <- sdef.resolveLength("n2.y", 16)
 			n2z <- sdef.resolveLength("n2.z", 17)
 
-			headerFormatter <- Header(headerDef)
+			headerCodec <- Header(headerDef)
 		} yield {
 			val readStaged = mkStagedReadFloatTruncated(
 				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z,
@@ -215,7 +359,7 @@ object StructDefs {
 			val floatPerTrig = 3 * 3
 			new StructCodec[Header |> MeshTriangles, MeshTriangles] {
 				override def read(buffer: ByteBuffer): Header |> MeshTriangles = {
-					val header = headerFormatter.read(buffer)
+					val header = headerCodec.read(buffer)
 					header -> { () =>
 						val vertices = Array.ofDim[Float](header.entries * floatPerTrig)
 						val normals = Array.ofDim[Float](header.entries * floatPerTrig)
@@ -238,26 +382,6 @@ object StructDefs {
 							normals(i * floatPerTrig + 6) = readStaged(buffer, n2x)
 							normals(i * floatPerTrig + 7) = readStaged(buffer, n2y)
 							normals(i * floatPerTrig + 8) = readStaged(buffer, n2z)
-
-							val n =
-								vertices(i * floatPerTrig + 0)
-							+vertices(i * floatPerTrig + 1)
-							+vertices(i * floatPerTrig + 2)
-							+vertices(i * floatPerTrig + 3)
-							+vertices(i * floatPerTrig + 4)
-							+vertices(i * floatPerTrig + 5)
-							+vertices(i * floatPerTrig + 6)
-							+vertices(i * floatPerTrig + 7)
-							+vertices(i * floatPerTrig + 8)
-
-
-//							println(s"$i => " +
-//									s"( ${vertices(i * floatPerTrig + 0)} ${vertices(i * floatPerTrig + 1)} ${vertices(i * floatPerTrig + 2)} ) " +
-//									s"( ${vertices(i * floatPerTrig + 3)} ${vertices(i * floatPerTrig + 4)} ${vertices(i * floatPerTrig + 5)} ) " +
-//									s"( ${vertices(i * floatPerTrig + 6)} ${vertices(i * floatPerTrig + 7)} ${vertices(i * floatPerTrig + 8)} ) | " +
-//							s"\n( ${normals(i * floatPerTrig + 0)} ${normals(i * floatPerTrig + 1)} ${normals(i * floatPerTrig + 2)} ) " +
-//							s"( ${normals(i * floatPerTrig + 3)} ${normals(i * floatPerTrig + 4)} ${normals(i * floatPerTrig + 5)} ) " +
-//							s"( ${normals(i * floatPerTrig + 6)} ${normals(i * floatPerTrig + 7)} ${normals(i * floatPerTrig + 8)} )")
 						}
 						MeshTriangles(vertices, normals)
 					}
@@ -265,9 +389,7 @@ object StructDefs {
 
 				override def write(b: MeshTriangles, buffer: ByteBuffer): Unit = {
 					val entries = b.vertices.length / floatPerTrig
-					val header = Header(System.currentTimeMillis(), entries)
-					headerFormatter.write(header, buffer)
-					println("Write header=" + header)
+					headerCodec.write(Header(entries), buffer)
 					for (i <- 0 until entries) {
 						writeStaged(buffer, v0x, b.vertices(i * floatPerTrig + 0))
 						writeStaged(buffer, v0y, b.vertices(i * floatPerTrig + 1))
@@ -343,7 +465,7 @@ object StructDefs {
 				}
 
 				override def write(b: Particles, buffer: ByteBuffer): Unit = {
-					headerFormatter.write(Header(System.currentTimeMillis(), b.xs.length), buffer)
+					headerFormatter.write(Header(System.currentTimeMillis(), b.xs.length, b.xs.length), buffer)
 					b.xs.foreach { x =>
 						writeLongTruncated(buffer, id, x.id)
 						writeIntTruncated(buffer, tpe, x.tpe)
@@ -361,22 +483,41 @@ object StructDefs {
 	}
 
 	case class Entry(name: String, size: Long)
-	case class StructDef[A <: Struct](fields: Vector[Entry]) {
+	case class StructDef[A](fields: Vector[Entry], size: Long) {
+
+		if (fields.map(_.size).sum != size)
+			throw new AssertionError(s"corrupt struct def ${this}")
 
 		private lazy val lut: Map[(String, Int), Long] = fields
 			.zipWithIndex
-			.map { case (Entry(name, size), idx) => (name, idx) -> size }.toMap
+			.map { case (Entry(name, s), idx) => (name, idx) -> s }.toMap
 		def resolveLength(key: String, index: Int): Either[Throwable, Long] = lut.get(key -> index) match {
-			case Some(size) => Right(size)
-			case None       => Left(new Exception(s"No key($key) at [$index], fields = ${fields.zipWithIndex}"))
+			case Some(s) => Right(s)
+			case None    => Left(new Exception(s"No key($key) at [$index], fields = ${fields.zipWithIndex}"))
 		}
 	}
 
-	implicit val entryRw: RW[Entry] = macroRW
-	implicit def structureRw[A <: Struct]: RW[StructDef[A]] = macroRW
 
-	def readStructDef[A <: Struct](path: File): Either[Throwable, StructDef[A]] = {
-		Try(read[StructDef[A]](path.contentAsString(StandardCharsets.UTF_8))).toEither
+	implicit val entryRw: RW[Entry] = macroRW
+	implicit def structureRw[A]: RW[StructDef[A]] = macroRW
+
+	trait MkDef {
+		def resolve[A](key: String): Either[Throwable, StructDef[A]]
+	}
+
+
+	def readStructDef(path: File): Either[Throwable, MkDef] = {
+
+		Try(read[Map[String, StructDef[Unit]]](path.contentAsString(StandardCharsets.UTF_8)))
+			.map { map =>
+
+				new MkDef {
+					override def resolve[A](key: String) = map.get(key) match {
+						case Some(sd) => Right(sd.asInstanceOf[StructDef[A]])
+						case None     => Left(new Exception(s"$key not found in $map"))
+					}
+				}
+			}.toEither
 	}
 
 }

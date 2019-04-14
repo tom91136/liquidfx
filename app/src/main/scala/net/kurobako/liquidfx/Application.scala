@@ -248,7 +248,8 @@ object Application extends JFXApp {
 						val attractor = (rHat * (-100f * 1000f)) / distSq
 
 						//						1f / (Gp distance p.position)
-						attractor.clamp(-10, 10, -10, 10, -10, 10) + Vec3(0f, p.mass * gravity.value, 0f)
+						attractor.clamp(-10, 10, -10, 10, -10, 10) +
+						Vec3(0f, p.mass * gravity.value, 0f)
 					})(acc, obstacles)
 			}
 
