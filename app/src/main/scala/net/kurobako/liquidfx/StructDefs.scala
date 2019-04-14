@@ -170,6 +170,41 @@ object StructDefs {
 		}
 	}
 
+	case class Drain(centre: Vec3, width: Float, depth: Float) extends Struct
+	object Drain {
+		def apply(headerDef: StructDef[Header], sdef: StructDef[Array[Drain]]):
+		Either[Throwable, StructCodec[Array[Drain], Array[Drain]]] = for {
+			drainx <- sdef.resolveLength("drain.x", 0)
+			drainy <- sdef.resolveLength("drain.y", 1)
+			drainz <- sdef.resolveLength("drain.z", 2)
+			width <- sdef.resolveLength("width", 3)
+			depth <- sdef.resolveLength("depth", 4)
+			header <- Header(headerDef)
+		} yield new StructCodec[Array[Drain], Array[Drain]] {
+			override def read(buffer: ByteBuffer): Array[Drain] =
+				Array.fill(header.read(buffer).entries) {
+					Drain(
+						centre = Vec3(
+							readFloatTruncated(buffer, drainx),
+							readFloatTruncated(buffer, drainy),
+							readFloatTruncated(buffer, drainz)
+						),
+						width = readFloatTruncated(buffer, width),
+						depth = readFloatTruncated(buffer, depth))
+				}
+			override def write(sources: Array[Drain], buffer: ByteBuffer): Unit = {
+				header.write(Header(sources.length), buffer)
+				sources.foreach { source =>
+					writeFloatTruncated(buffer, drainx, source.centre.x)
+					writeFloatTruncated(buffer, drainy, source.centre.y)
+					writeFloatTruncated(buffer, drainz, source.centre.z)
+					writeFloatTruncated(buffer, width, source.width)
+					writeFloatTruncated(buffer, depth, source.depth)
+				}
+			}
+		}
+	}
+
 
 	case class SceneMeta(suspend: Boolean,
 						 terminate: Boolean,
@@ -212,26 +247,32 @@ object StructDefs {
 
 	case class Scene(meta: SceneMeta,
 					 wells: Array[Well],
-					 sources: Array[Source]) extends Struct
+					 sources: Array[Source],
+					 drains: Array[Drain]) extends Struct
 
 	object Scene {
 		def apply(metaDef: StructDef[SceneMeta],
 				  headerDef: StructDef[Header],
 				  wellDef: StructDef[Array[Well]],
-				  sourceDef: StructDef[Array[Source]]): Either[Throwable, StructCodec[Scene, Scene]] = for {
+				  sourceDef: StructDef[Array[Source]],
+				  drainDef: StructDef[Array[Drain]]
+				 ): Either[Throwable, StructCodec[Scene, Scene]] = for {
 			meta <- SceneMeta(metaDef)
 			wellCodec <- Well(headerDef, wellDef)
 			sourceCodec <- Source(headerDef, sourceDef)
+			drainCodec <- Drain(headerDef, drainDef)
 		} yield new StructCodec[Scene, Scene] {
 			override def read(buffer: ByteBuffer): Scene = Scene(
 				meta.read(buffer),
 				wellCodec.read(buffer),
-				sourceCodec.read(buffer)
+				sourceCodec.read(buffer),
+				drainCodec.read(buffer)
 			)
-			override def write(b: Scene, buffer: ByteBuffer): Unit = {
-				meta.write(b.meta, buffer)
-				wellCodec.write(b.wells, buffer)
-				sourceCodec.write(b.sources, buffer)
+			override def write(scene: Scene, buffer: ByteBuffer): Unit = {
+				meta.write(scene.meta, buffer)
+				wellCodec.write(scene.wells, buffer)
+				sourceCodec.write(scene.sources, buffer)
+				drainCodec.write(scene.drains, buffer)
 			}
 		}
 	}

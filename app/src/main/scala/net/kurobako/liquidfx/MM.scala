@@ -140,10 +140,11 @@ object MM extends JFXApp {
 			solverIter.value, solverStep.value, solverScale.value,
 			surfaceRes.value, gravity.value),
 		wells = Array(
-			Well(Vec3(300), -1000f * 1000f * 50),
-			Well(Vec3(1000, 1000, 1000), 1000f * 1000f * 10)
+			Well(Vec3(300), -1000f * 1000f * 10),
+			//			Well(Vec3(1000, 1000, 1000), 1000f * 1000f * 10)
 		),
-		sources = Array(Source(Vec3(42), 42, 42), Source(Vec3(32), 32, 32))
+		sources = Array(Source(centre = Vec3(1000), rate = 10, tag = 42)),
+		drains = Array(Drain(centre = Vec3(200), width = 100, depth = 100))
 	)
 
 	private def doUpdate(codec: StructCodec[Header |> MeshTriangles, MeshTriangles],
@@ -267,13 +268,14 @@ object MM extends JFXApp {
 
 		wellDef <- defs.resolve[Array[Well]]("well")
 		sourceDef <- defs.resolve[Array[Source]]("source")
+		drainDef <- defs.resolve[Array[Drain]]("drain")
 		sceneMetaDef <- defs.resolve[SceneMeta]("sceneMeta")
 
 		trianglesDef <- defs.resolve[Triangles]("triangle")
 		particlesDef <- defs.resolve[Particles]("particle")
 		meshTrianglesDef <- defs.resolve[MeshTriangles]("meshTriangle")
 
-		sceneCodec <- StructDefs.Scene(sceneMetaDef, headerDef, wellDef, sourceDef)
+		sceneCodec <- StructDefs.Scene(sceneMetaDef, headerDef, wellDef, sourceDef, drainDef)
 		particlesCodec <- Particles(headerDef, particlesDef)
 		trianglesCodec <- Triangles(headerDef, trianglesDef)
 		meshTrianglesCodec <- MeshTriangles(headerDef, meshTrianglesDef)
