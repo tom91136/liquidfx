@@ -194,12 +194,12 @@ object StructDefs {
 				}
 			override def write(sources: Array[Drain], buffer: ByteBuffer): Unit = {
 				header.write(Header(sources.length), buffer)
-				sources.foreach { source =>
-					writeFloatTruncated(buffer, drainx, source.centre.x)
-					writeFloatTruncated(buffer, drainy, source.centre.y)
-					writeFloatTruncated(buffer, drainz, source.centre.z)
-					writeFloatTruncated(buffer, width, source.width)
-					writeFloatTruncated(buffer, depth, source.depth)
+				sources.foreach { drain =>
+					writeFloatTruncated(buffer, drainx, drain.centre.x)
+					writeFloatTruncated(buffer, drainy, drain.centre.y)
+					writeFloatTruncated(buffer, drainz, drain.centre.z)
+					writeFloatTruncated(buffer, width, drain.width)
+					writeFloatTruncated(buffer, depth, drain.depth)
 				}
 			}
 		}
