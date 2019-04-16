@@ -18,22 +18,23 @@ import scalafx.application.{JFXApp, Platform}
 import scalafx.beans.binding.NumberExpression
 import scalafx.beans.property._
 import scalafx.geometry.{Insets, Pos}
-import scalafx.scene.control.{ColorPicker, Label, Slider}
+import scalafx.scene.control.{Button, ButtonBar, ColorPicker, Label, ListCell, ListView, Slider}
+import scalafx.scene.effect.DropShadow
 import scalafx.scene.input.{KeyCode, KeyEvent, MouseEvent}
-import scalafx.scene.layout.{HBox, Priority, StackPane, VBox}
+import scalafx.scene.layout.{BorderPane, HBox, Priority, Region, StackPane, VBox}
 import scalafx.scene.paint.PhongMaterial
 import scalafx.scene.shape._
-import scalafx.scene.{Group, Scene, SubScene}
+import scalafx.scene.{Group, Node, Scene, SubScene}
 
 
 object MM extends JFXApp {
 
 	private val solverIter  = IntegerProperty(5)
 	private val solverStep  = FloatProperty(1.2f)
-	private val solverScale = FloatProperty(1000f)
-	private val surfaceRes  = FloatProperty(1)
+	private val solverScale = FloatProperty(300f)
+	private val surfaceRes  = FloatProperty(1.5f)
 	private val gravity     = FloatProperty(9.8f)
-	private val colour      = ObjectProperty[Color](Color.AQUA)
+	private val colour      = ObjectProperty[Color](Color.rgb(0, 119, 190))
 
 	private val showParticle = BooleanProperty(false)
 	private val flatShading  = BooleanProperty(false)
@@ -88,9 +89,9 @@ object MM extends JFXApp {
 		mesh.faces = Array.tabulate(xs.length * 3)(i => i -> 0).flatMap { case (l, r) => Array(l, r) }
 	}
 
-	val group = new Group(
+	val sceneGroup = new Group(
 		SceneControl.mkAxis(),
-		new Box(10000, 1, 10000) {translateY = 2000},
+//		new Box(10000, 1, 10000) {translateY = 2000},
 		meshView,
 	)
 
@@ -134,18 +135,25 @@ object MM extends JFXApp {
 	//
 	//	}
 
-	private def makeScene(suspend: Boolean) = StructDefs.Scene(
-		meta = SceneMeta(
-			suspend = suspend, terminate = false,
-			solverIter.value, solverStep.value, solverScale.value,
-			surfaceRes.value, gravity.value),
-		wells = Array(
-			Well(Vec3(300), -1000f * 1000f * 10),
-			//			Well(Vec3(1000, 1000, 1000), 1000f * 1000f * 10)
-		),
-		sources = Array(Source(centre = Vec3(1000), rate = 10, tag = 42)),
-		drains = Array(Drain(centre = Vec3(200), width = 100, depth = 100))
-	)
+
+	private def makeScene(suspend: Boolean) = {
+		val xs = elementList.items.value.map(_.repr)
+		StructDefs.Scene(
+			meta = SceneMeta(
+				suspend = suspend, terminate = false,
+				solverIter = solverIter.value,
+				solverStep = solverStep.value,
+				solverScale = solverScale.value,
+				surfaceRes = surfaceRes.value,
+				gravity = gravity.value,
+				minBound = Vec3(-500),
+				maxBound = Vec3(500)
+			),
+			wells = xs.collect { case x: Well => x }.toArray,
+			sources = xs.collect { case x: Source => x }.toArray,
+			drains = xs.collect { case x: Drain => x }.toArray
+		)
+	}
 
 	private def doUpdate(codec: StructCodec[Header |> MeshTriangles, MeshTriangles],
 						 sceneCodec: StructCodec[StructDefs.Scene, StructDefs.Scene])
@@ -161,15 +169,17 @@ object MM extends JFXApp {
 					val start = header.timestamp
 					if (start != last && header.written == header.entries) {
 						last = start
+
+						val scene = makeScene(suspend = true)
 						sceneSink.clear()
-						sceneCodec.write(makeScene(suspend = true), sceneSink)
+						sceneCodec.write(scene, sceneSink)
 						try {
 							time("doUpdate") {
 								action(readTrigs())
 							}
 						} finally {
 							sceneSink.clear()
-							sceneCodec.write(makeScene(suspend = false), sceneSink)
+							sceneCodec.write(scene.copy(meta = scene.meta.copy(suspend = false)), sceneSink)
 						}
 					}
 				} catch {
@@ -184,20 +194,140 @@ object MM extends JFXApp {
 		}).start()
 	}
 
-	val subScene: SubScene = SceneControl.mkScene(group, 500, 500)
-	val infoLabel          = new Label() {padding = Insets(8)}
+	val subScene: SubScene = SceneControl.mkScene(sceneGroup, 500, 500)
+	val infoLabel          = new Label() {
+		alignmentInParent = Pos.TopLeft
+		textFill = Color.WHITE
+		effect = new DropShadow(4, Color.BLACK)
+		padding = Insets(8)
+	}
 
-	def mkSlider[T: Numeric](source: Property[T, Number] with NumberExpression, min: Float, max: Float, name: String): HBox = {
+	def mkSlider[T: Numeric](source: Property[T, Number] with NumberExpression,
+							 min: Float, max: Float, name: String,
+							 labelWidth: Double = Region.USE_COMPUTED_SIZE): HBox = {
 		def valueWithName = f"$name(${source.floatValue}%.2f):"
 		new HBox(
 			new Label(valueWithName) {
-				prefWidth = 200
+				minWidth = labelWidth
 				source.onChange {text = valueWithName}
 			}, new Slider(min, max, source.floatValue()) {
-				prefWidth = 450
+				hgrow = Priority.Always
 				source <== value
 			},
 		)
+	}
+
+	sealed trait Element[A] {
+		def repr: A
+		def gizmo: Node
+	}
+
+	def mkElementGizmo(color: Color, x: FloatProperty, y: FloatProperty, z: FloatProperty): Sphere =
+		new Sphere(20) {
+			material = new PhongMaterial(color)
+			translateX <== x
+			translateY <== y
+			translateZ <== z
+		}
+
+	case class WellElement(x: FloatProperty = FloatProperty(0),
+						   y: FloatProperty = FloatProperty(0),
+						   z: FloatProperty = FloatProperty(0),
+						   force: FloatProperty = FloatProperty(10),
+						  ) extends Element[Well] {
+		override val gizmo : Node = mkElementGizmo(Color.RED, x, y, z)
+		override def repr: Well = Well(Vec3(x.value, y.value, z.value), force.value)
+	}
+
+	case class SourceElement(x: FloatProperty = FloatProperty(0),
+							 y: FloatProperty = FloatProperty(0),
+							 z: FloatProperty = FloatProperty(0),
+							 rate: IntegerProperty = IntegerProperty(10),
+							 tag: IntegerProperty = IntegerProperty(2)
+							) extends Element[Source] {
+		override val gizmo : Node = mkElementGizmo(Color.BLUE, x, y, z)
+		override def repr: Source = Source(Vec3(x.value, y.value, z.value), rate.value, tag.value)
+	}
+
+	case class DrainElement(x: FloatProperty = FloatProperty(0),
+							y: FloatProperty = FloatProperty(0),
+							z: FloatProperty = FloatProperty(0),
+							width: FloatProperty = FloatProperty(100),
+							depth: FloatProperty = FloatProperty(100)
+						   ) extends Element[Drain] {
+		override val gizmo : Node = mkElementGizmo(Color.rgb(0, 0, 0, 0.5), x, y, z)
+		override def repr: Drain = Drain(Vec3(x.value, y.value, z.value), width.value, depth.value)
+	}
+
+
+	val elementList = new ListView[Element[_]]() {
+		prefWidth = 300
+		vgrow = Priority.Always
+		def mkRow(node: Node, remove: () => Unit) = {
+			new HBox(node, new Button("X") {onAction = handle(remove())}) {
+				alignment = Pos.CenterLeft
+			}
+		}
+		cellFactory = { _ =>
+			new ListCell[Element[_]] {
+				item.onChange { (_, _, n) =>
+					val deleteItem = { () =>
+						items.value -= n
+						sceneGroup.children -= n.gizmo
+						()
+					}
+					graphic = n match {
+						case null                                => null
+						case WellElement(x, y, z, force)         => mkRow(new VBox(
+							new Label("Well"),
+							mkSlider(x, -500, 500, "X", 80),
+							mkSlider(y, -500, 500, "Y", 80),
+							mkSlider(z, -500, 500, "Z", 80),
+							mkSlider(force, -50000, 50000, "Force", 80),
+						), deleteItem)
+						case SourceElement(x, y, z, rate, tag)   =>
+							mkRow(new VBox(
+								new Label("Source"),
+								mkSlider(x, -500, 500, "X", 80),
+								mkSlider(y, -500, 500, "Y", 80),
+								mkSlider(z, -500, 500, "Z", 80),
+								mkSlider(rate, 0, 100, "Rate", 80),
+								mkSlider(tag, 0, 1000, "Tag", 80),
+							), deleteItem)
+						case DrainElement(x, y, z, width, depth) => mkRow(new VBox(
+							new Label("Drain"),
+							mkSlider(x, -500, 500, "X", 80),
+							mkSlider(y, -500, 500, "Y", 80),
+							mkSlider(z, -500, 500, "Z", 80),
+							mkSlider(width, 0, 1000, "Width", 80),
+							mkSlider(depth, 0, 1000, "Depth", 80),
+						), deleteItem)
+					}
+
+
+				}
+			}
+		}
+	}
+
+	val sceneControls = new HBox(
+		new VBox(
+			mkSlider(solverIter, 0, 100, "Solver Iter", 200),
+			mkSlider(solverScale, 100, 5000, "Solver scale", 200),
+			mkSlider(solverStep, 0.1f, 10, "Solver step", 200),
+			mkSlider(surfaceRes, 0.1f, 8, "Surface res", 200),
+			mkSlider(gravity, -20, 20, "Graivty", 200),
+
+		) {
+			pickOnBounds = false
+			hgrow = Priority.Always
+		},
+		new ColorPicker(colour.value) {
+			colour <== value
+		}
+	) {
+		styleClass += "tool-bar"
+		pickOnBounds = false
 	}
 
 	stage = new PrimaryStage {
@@ -207,22 +337,29 @@ object MM extends JFXApp {
 			new StackPane {
 				children = Seq(
 					subScene,
-					new HBox(
-						new VBox(
-							mkSlider(solverIter, 0, 100, "Solver Iter"),
-							mkSlider(solverScale, 100, 5000, "Solver scale"),
-							mkSlider(solverStep, 0.1f, 10, "Solver step"),
-							mkSlider(surfaceRes, 0.1f, 8, "Surface res"),
-							mkSlider(gravity, -20, 20, "Graivty"),
-							new ColorPicker(colour.value) {
-								colour <== value
+					new BorderPane() {
+						top = sceneControls
+						def mkAddElementButton(name: String, default:  () => Element[_]) = {
+							new Button(name) {
+								onAction = handle {
+									val x = default()
+									sceneGroup.children += x.gizmo
+									elementList.items.value += x
+								}
 							}
-						) {
-							pickOnBounds = false
-							hgrow = Priority.Always
-						},
-						infoLabel
-					) {
+						}
+						center = infoLabel
+						right = new VBox(
+							new HBox(
+								mkAddElementButton("+Well", () => WellElement()),
+								mkAddElementButton("+Source", () => SourceElement()),
+								mkAddElementButton("+Drain", () => DrainElement())
+							) {
+								styleClass += "tool-bar"
+								spacing = 4
+								padding = Insets(4)
+							}, elementList
+						)
 						pickOnBounds = false
 					}
 				)
@@ -230,7 +367,7 @@ object MM extends JFXApp {
 				subScene.width <== width
 				subScene.height <== height
 				vgrow = Priority.Always
-			}, 900, 900) {
+			}, 1200, 900) {
 			onKeyPressed = { e: KeyEvent =>
 				e.code match {
 					case KeyCode.S => meshView.visible = !meshView.visible.value
@@ -291,15 +428,15 @@ object MM extends JFXApp {
 			view.translateY = 200
 			view.translateX = -100
 			view.translateZ = 200
-			group.children += node
+//			sceneGroup.children += node
 
 			val buffer = openSink(BasePath / "colliders.mmf", size = 16 * 4 * 50000)
 
-			group.onMouseReleased = handle {group.onMouseDragged = null}
-			group.onMouseClicked = { start: MouseEvent =>
+			sceneGroup.onMouseReleased = handle {sceneGroup.onMouseDragged = null}
+			sceneGroup.onMouseClicked = { start: MouseEvent =>
 				if (start.pickResult.intersectedNode.exists(_.delegate == view)) {
 					val _start = Vec3(start.x, start.y, start.z)
-					group.onMouseDragged = { drag: MouseEvent =>
+					sceneGroup.onMouseDragged = { drag: MouseEvent =>
 						val delta = Vec3(drag.x, drag.y, drag.z) - _start
 						view.translateX = delta.x
 						view.translateY = delta.y
@@ -372,7 +509,7 @@ object MM extends JFXApp {
 						new Sphere(10) {
 							visible <== showParticle
 							material = new PhongMaterial(S.interpolate(E, k.toFloat / _particles.length))
-							group.children += this.delegate
+							sceneGroup.children += this.delegate
 						}
 					})
 					sphere.translateX = x.position.x

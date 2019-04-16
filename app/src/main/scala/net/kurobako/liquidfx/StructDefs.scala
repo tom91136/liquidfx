@@ -212,7 +212,9 @@ object StructDefs {
 						 solverStep: Float,
 						 solverScale: Float,
 						 surfaceRes: Float,
-						 gravity: Float) extends Struct
+						 gravity: Float,
+						 minBound: Vec3, maxBound: Vec3
+						) extends Struct
 
 	object SceneMeta {
 		def apply(sdef: StructDef[SceneMeta]): Either[Throwable, StructCodec[SceneMeta, SceneMeta]] = for {
@@ -223,6 +225,15 @@ object StructDefs {
 			solverScale <- sdef.resolveLength("solverScale", 4)
 			surfaceRes <- sdef.resolveLength("surfaceRes", 5)
 			gravity <- sdef.resolveLength("gravity", 6)
+
+			minBoundx <- sdef.resolveLength("minBound.x", 7)
+			minBoundy <- sdef.resolveLength("minBound.y", 8)
+			minBoundz <- sdef.resolveLength("minBound.z", 9)
+
+			maxBoundx <- sdef.resolveLength("maxBound.x", 10)
+			maxBoundy <- sdef.resolveLength("maxBound.y", 11)
+			maxBoundz <- sdef.resolveLength("maxBound.z", 12)
+
 		} yield new StructCodec[SceneMeta, SceneMeta] {
 			override def read(buffer: ByteBuffer): SceneMeta = SceneMeta(
 				readBooleanTruncated(buffer, suspend),
@@ -232,6 +243,16 @@ object StructDefs {
 				readFloatTruncated(buffer, solverScale),
 				readFloatTruncated(buffer, surfaceRes),
 				readFloatTruncated(buffer, gravity),
+				Vec3(
+					readFloatTruncated(buffer, minBoundx),
+					readFloatTruncated(buffer, minBoundy),
+					readFloatTruncated(buffer, minBoundz)
+				),
+				Vec3(
+					readFloatTruncated(buffer, maxBoundx),
+					readFloatTruncated(buffer, maxBoundy),
+					readFloatTruncated(buffer, maxBoundz)
+				)
 			)
 			override def write(b: SceneMeta, buffer: ByteBuffer): Unit = {
 				writeBooleanTruncated(buffer, suspend, b.suspend)
@@ -241,6 +262,14 @@ object StructDefs {
 				writeFloatTruncated(buffer, solverScale, b.solverScale)
 				writeFloatTruncated(buffer, surfaceRes, b.surfaceRes)
 				writeFloatTruncated(buffer, gravity, b.gravity)
+
+				writeFloatTruncated(buffer, minBoundx, b.minBound.x)
+				writeFloatTruncated(buffer, minBoundy, b.minBound.y)
+				writeFloatTruncated(buffer, minBoundz, b.minBound.z)
+
+				writeFloatTruncated(buffer, maxBoundx, b.maxBound.x)
+				writeFloatTruncated(buffer, maxBoundy, b.maxBound.y)
+				writeFloatTruncated(buffer, maxBoundz, b.maxBound.z)
 			}
 		}
 	}
