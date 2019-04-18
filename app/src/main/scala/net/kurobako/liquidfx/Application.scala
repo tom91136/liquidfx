@@ -80,30 +80,32 @@ object Application extends JFXApp {
 				p.a.translateZ = p.position.z
 				val v = clamp(120, 255, p.velocity.lengthSquared * 100).toInt
 
-				val surface = if (p.surface) {
+				val surface = if (p.tpe == SphSolver.Solid) {
 					Color.Red
 				} else {
-					Color.Blue
+					Color.rgb(v, v, v)
 				}
 
 
-				p.a.material = new PhongMaterial(Color.rgb(v, v, v))
+				p.a.material = new PhongMaterial(surface)
 
 			}
 		}
 	}
 
 
-	val maxIter = Int.MaxValue
-	val r       = 7 //28
-	val div = r / 2
+	val maxIter = 1000000
+	val r       = 15 //28
 	val xs  = (for {
-		x <- 0 to 100 by r
-		y <- 0 to 100 by r
-		z <- 0 to 100 by r
-	} yield Particle(a = new Sphere(r * 0.65) {
+		x <- 0 to 200 by r
+		y <- 0 to 200 by r
+		z <- 0 to 200 by r
+	} yield Particle(a = new Sphere(r * 0.55, 10) {
 		depthTest = DepthTest.Enable
-	}, position = Vec3(x.toFloat + 100, y.toFloat - 200, z.toFloat))).toArray
+	},
+		position = Vec3(x.toFloat , y.toFloat , z.toFloat),
+		tpe = if(x < 100 &&y < 100 && z < 100) SphSolver.Solid else SphSolver.Fluid)
+			).toArray
 
 
 	val ball = new Sphere(120) {
@@ -130,12 +132,11 @@ object Application extends JFXApp {
 		material = new PhongMaterial(Color.White)
 	}
 
-	val container = new Box(500, 500, 180) {
+	val container = new Box(500, 500, 500) {
 		drawMode = DrawMode.Line
 		translateX = 0 //250
-
-		translateY = -350
-		translateZ = -30
+		translateY = 0
+		translateZ = 0
 		//		material = new PhongMaterial(Color.WhiteSmoke.opacity(0.2))
 	}
 
@@ -186,11 +187,11 @@ object Application extends JFXApp {
 		val solver = new SphSolver(scale = 300f)
 		val obstacles = Array(
 			//			Colliders.convexMeshCollider(bunnyMesh, mv),
-			Colliders.convexMeshCollider(slope, slopeView),
+//			Colliders.convexMeshCollider(slope, slopeView),
 			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
-			Colliders.convexBoxCollider(box2),
-			Colliders.convexBoxCollider(box3),
+//			Colliders.convexBoxCollider(box2),
+//			Colliders.convexBoxCollider(box3),
 		)
 
 
@@ -217,6 +218,8 @@ object Application extends JFXApp {
 				zRange = -diffZ to diffZ)
 		}
 
+		renderParticles(xs)
+
 		val G: Float = (6.674 * Math.pow(10, -11)).toFloat
 		(0 to maxIter).foldLeft(xs) { (acc, frame) =>
 
@@ -230,27 +233,33 @@ object Application extends JFXApp {
 			println("\t"+Colliders.dv)
 
 			val start = System.currentTimeMillis()
+			val Gp = Vec3(
+				centre.getTranslateX,
+				centre.getTranslateY,
+				centre.getTranslateZ)
 			val that = time("solve") {
-				val Gp = Vec3(
-					centre.getTranslateX,
-					centre.getTranslateY,
-					centre.getTranslateZ)
 				solver.advance(
 					dt = 0.0083f * deltaT.value,
 					iteration = iter.value,
 					constantForce = { p: Particle[Sphere] =>
 
 
-						val distSq = Gp.distanceSq(p.position)
-
-						val rHat = (p.position - Gp) / math.sqrt(distSq).toFloat
-
-						val attractor = (rHat * (-100f * 1000f)) / distSq
-
-						//						1f / (Gp distance p.position)
-						attractor.clamp(-10, 10, -10, 10, -10, 10) +
+//						val distSq = Gp.distanceSq(p.position)
+//
+//						val rHat = (p.position - Gp) / math.sqrt(distSq).toFloat
+//
+//						val attractor = (rHat * (-100f * 1000f)) / distSq
+//
+//						//						1f / (Gp distance p.position)
+//						attractor.clamp(-10, 10, -10, 10, -10, 10) +
 						Vec3(0f, p.mass * gravity.value, 0f)
 					})(acc, obstacles)
+			}.map{
+				x =>
+					x.tpe match {
+						case SphSolver.Fluid => x
+						case SphSolver.Solid => x.copy(position = x.position + Gp)
+					}
 			}
 
 			val tCount = if (surface.value) {
@@ -417,12 +426,12 @@ object Application extends JFXApp {
 		), 800, 800) {
 			onKeyPressed = { e: KeyEvent =>
 				e.code match {
-					case KeyCode.Up   => slopeView.translateY = slopeView.getTranslateY - 8
-					case KeyCode.Down => slopeView.translateY = slopeView.getTranslateY + 8
-					case KeyCode.A    => slopeView.translateX = slopeView.getTranslateX - 8
-					case KeyCode.D    => slopeView.translateX = slopeView.getTranslateX + 8
-					case KeyCode.W    => slopeView.translateZ = slopeView.getTranslateZ - 8
-					case KeyCode.S    => slopeView.translateZ = slopeView.getTranslateZ + 8
+					case KeyCode.Up   => centre.translateY = centre.getTranslateY - 8
+					case KeyCode.Down => centre.translateY = centre.getTranslateY + 8
+					case KeyCode.A    => centre.translateX = centre.getTranslateX - 8
+					case KeyCode.D    => centre.translateX = centre.getTranslateX + 8
+					case KeyCode.W    => centre.translateZ = centre.getTranslateZ - 8
+					case KeyCode.S    => centre.translateZ = centre.getTranslateZ + 8
 					case _            =>
 				}
 

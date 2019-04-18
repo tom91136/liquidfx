@@ -62,14 +62,16 @@ class SphSolver(val h: Float = 0.1f, // Particle(smoothing kernel) size
 				  )
 
 		def applyForces(xs: Seq[Particle[A]]) = xs.par.map { p =>
-			val f = constantForce(p)
-			val that = p.copy(
-				velocity = f *+ (dt, p.velocity) // apply external force (constant in this case)
-			)
-			new Atom(
-				particle = that,
-				velocity = that.velocity,
-				now = that.velocity *+ (dt, that.position / scale)) // predict position
+			p.tpe match {
+				case SphSolver.Solid =>  new Atom(p, velocity = p.velocity, now = p.position/ scale)
+				case SphSolver.Fluid =>
+					val that = p.copy(
+						velocity = constantForce(p) *+ (dt, p.velocity)) // apply external force (constant in this case)
+					new Atom(
+						particle = that,
+						velocity = that.velocity,
+						now = that.velocity *+ (dt, that.position / scale)) // predict position
+			}
 		}.seq
 
 
@@ -164,19 +166,23 @@ class SphSolver(val h: Float = 0.1f, // Particle(smoothing kernel) size
 			xs.par.map { a =>
 
 
-				val mc = a.neighbours.foldLeft(Vec3.Zero) { case (acc, b) => b.now + acc } / a.neighbours.size
+//				val mc = a.neighbours.foldLeft(Vec3.Zero) { case (acc, b) => b.now + acc } / a.neighbours.size
 
 
 				val deltaX = a.now - a.particle.position / scale
 				// TODO  apply vorticity confinement and XSPH viscosity using the delta
 				//  computed above
-				a.particle.copy(
-					position = a.now * scale,
-					velocity = deltaX *+ (1f / dt, a.velocity) * Vd,
-//					surface = mc.distance(a.now) > 0.09f
 
-					//					neighbours = a.neighbours.map(_.particle)
-				)
+				a.particle.tpe match {
+					case SphSolver.Solid => a.particle
+					case SphSolver.Fluid => a.particle.copy(
+						position = a.now * scale,
+						velocity = deltaX *+ (1f / dt, a.velocity) * Vd,
+						//					surface = mc.distance(a.now) > 0.09f
+
+						//					neighbours = a.neighbours.map(_.particle)
+					)
+				}
 			}
 		}
 
