@@ -95,17 +95,42 @@ object Application extends JFXApp {
 
 
 	val maxIter = 1000000
-	val r       = 15 //28
-	val xs  = (for {
+	val r       = 20 //28
+
+	val wall  = 10
+	val wallC = wall / 2
+	val obs   = (for {
+		x <- 0 to wall
+		y <- 0 to wall
+		z <- 0 to wall
+		if x == 0 || x == wall ||
+		   y == 0 || y == wall ||
+		   z == 0 || z == wall ||
+		   (x == wallC && y == wallC && z == wallC)
+
+	} yield {
+		val HS = 500f * (0.1f /2 )
+
+		Particle(
+			a = new Sphere(4, 5) {depthTest = DepthTest.Enable},
+			position = Vec3(x.toFloat, y.toFloat, z.toFloat) * HS,
+			mass = if ((x == wallC && y == wallC && z == wallC)) 1 else 1,
+			tpe = SphSolver.Solid)
+	}).toArray
+
+	val xs: Array[Particle[Sphere]] = (for {
 		x <- 0 to 200 by r
 		y <- 0 to 200 by r
-		z <- 0 to 200 by r
-	} yield Particle(a = new Sphere(r * 0.55, 10) {
-		depthTest = DepthTest.Enable
-	},
-		position = Vec3(x.toFloat , y.toFloat , z.toFloat),
-		tpe = if(x < 100 &&y < 100 && z < 100) SphSolver.Solid else SphSolver.Fluid)
-			).toArray
+		z <- 0 to 500 by r
+
+	} yield {
+		Particle(
+			a = new Sphere(r * 0.55, 5) {depthTest = DepthTest.Enable},
+			position = Vec3(x.toFloat, y.toFloat, z.toFloat),
+			mass = 1,
+			tpe = SphSolver.Fluid)
+	}
+										  ).toArray ++ obs
 
 
 	val ball = new Sphere(120) {
@@ -184,14 +209,14 @@ object Application extends JFXApp {
 	new Thread(() => {
 
 
-		val solver = new SphSolver(scale = 300f)
+		val solver = new SphSolver(scale = 500f)
 		val obstacles = Array(
 			//			Colliders.convexMeshCollider(bunnyMesh, mv),
-//			Colliders.convexMeshCollider(slope, slopeView),
+			//			Colliders.convexMeshCollider(slope, slopeView),
 			Colliders.concaveBoxCollider(container),
 			//				convexSphereCollider(ball),
-//			Colliders.convexBoxCollider(box2),
-//			Colliders.convexBoxCollider(box3),
+			//			Colliders.convexBoxCollider(box2),
+			//			Colliders.convexBoxCollider(box3),
 		)
 
 
@@ -224,13 +249,13 @@ object Application extends JFXApp {
 		(0 to maxIter).foldLeft(xs) { (acc, frame) =>
 
 
-			val now =  Vec3(
+			val now = Vec3(
 				slopeView.getTranslateX,
 				slopeView.getTranslateY,
 				slopeView.getTranslateZ)
 			Colliders.dv = (Colliders.prev - now)
 			Colliders.prev = now
-			println("\t"+Colliders.dv)
+			println("\t" + Colliders.dv)
 
 			val start = System.currentTimeMillis()
 			val Gp = Vec3(
@@ -244,17 +269,17 @@ object Application extends JFXApp {
 					constantForce = { p: Particle[Sphere] =>
 
 
-//						val distSq = Gp.distanceSq(p.position)
-//
-//						val rHat = (p.position - Gp) / math.sqrt(distSq).toFloat
-//
-//						val attractor = (rHat * (-100f * 1000f)) / distSq
-//
-//						//						1f / (Gp distance p.position)
-//						attractor.clamp(-10, 10, -10, 10, -10, 10) +
+						//						val distSq = Gp.distanceSq(p.position)
+						//
+						//						val rHat = (p.position - Gp) / math.sqrt(distSq).toFloat
+						//
+						//						val attractor = (rHat * (-100f * 1000f)) / distSq
+						//
+						//						//						1f / (Gp distance p.position)
+						//						attractor.clamp(-10, 10, -10, 10, -10, 10) +
 						Vec3(0f, p.mass * gravity.value, 0f)
 					})(acc, obstacles)
-			}.map{
+			}.map {
 				x =>
 					x.tpe match {
 						case SphSolver.Fluid => x
@@ -426,12 +451,12 @@ object Application extends JFXApp {
 		), 800, 800) {
 			onKeyPressed = { e: KeyEvent =>
 				e.code match {
-					case KeyCode.Up   => centre.translateY = centre.getTranslateY - 8
-					case KeyCode.Down => centre.translateY = centre.getTranslateY + 8
-					case KeyCode.A    => centre.translateX = centre.getTranslateX - 8
-					case KeyCode.D    => centre.translateX = centre.getTranslateX + 8
-					case KeyCode.W    => centre.translateZ = centre.getTranslateZ - 8
-					case KeyCode.S    => centre.translateZ = centre.getTranslateZ + 8
+					case KeyCode.Up   => centre.translateY = centre.getTranslateY - 20
+					case KeyCode.Down => centre.translateY = centre.getTranslateY + 20
+					case KeyCode.A    => centre.translateX = centre.getTranslateX - 20
+					case KeyCode.D    => centre.translateX = centre.getTranslateX + 20
+					case KeyCode.W    => centre.translateZ = centre.getTranslateZ - 20
+					case KeyCode.S    => centre.translateZ = centre.getTranslateZ + 20
 					case _            =>
 				}
 

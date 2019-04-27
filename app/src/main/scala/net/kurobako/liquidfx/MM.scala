@@ -2,6 +2,7 @@ package net.kurobako.liquidfx
 
 import java.nio.file.StandardOpenOption
 import java.nio.{ByteBuffer, ByteOrder}
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import java.util.concurrent.locks.ReentrantLock
@@ -17,7 +18,9 @@ import scalafx.application.JFXApp.PrimaryStage
 import scalafx.application.{JFXApp, Platform}
 import scalafx.beans.binding.NumberExpression
 import scalafx.beans.property._
-import scalafx.geometry.{Insets, Pos}
+import scalafx.collections.ObservableBuffer
+import scalafx.geometry.{Insets, Pos, Side}
+import scalafx.scene.chart.{AreaChart, CategoryAxis, NumberAxis, XYChart}
 import scalafx.scene.control.{Button, ButtonBar, ColorPicker, Label, ListCell, ListView, Slider}
 import scalafx.scene.effect.DropShadow
 import scalafx.scene.input.{KeyCode, KeyEvent, MouseEvent}
@@ -91,7 +94,7 @@ object MM extends JFXApp {
 
 	val sceneGroup = new Group(
 		SceneControl.mkAxis(),
-//		new Box(10000, 1, 10000) {translateY = 2000},
+		//		new Box(10000, 1, 10000) {translateY = 2000},
 		meshView,
 	)
 
@@ -235,7 +238,7 @@ object MM extends JFXApp {
 						   z: FloatProperty = FloatProperty(0),
 						   force: FloatProperty = FloatProperty(10),
 						  ) extends Element[Well] {
-		override val gizmo : Node = mkElementGizmo(Color.RED, x, y, z)
+		override val gizmo: Node = mkElementGizmo(Color.RED, x, y, z)
 		override def repr: Well = Well(Vec3(x.value, y.value, z.value), force.value)
 	}
 
@@ -245,7 +248,7 @@ object MM extends JFXApp {
 							 rate: IntegerProperty = IntegerProperty(10),
 							 tag: IntegerProperty = IntegerProperty(2)
 							) extends Element[Source] {
-		override val gizmo : Node = mkElementGizmo(Color.BLUE, x, y, z)
+		override val gizmo: Node = mkElementGizmo(Color.BLUE, x, y, z)
 		override def repr: Source = Source(Vec3(x.value, y.value, z.value), rate.value, tag.value)
 	}
 
@@ -255,9 +258,28 @@ object MM extends JFXApp {
 							width: FloatProperty = FloatProperty(100),
 							depth: FloatProperty = FloatProperty(100)
 						   ) extends Element[Drain] {
-		override val gizmo : Node = mkElementGizmo(Color.rgb(0, 0, 0, 0.5), x, y, z)
+		override val gizmo: Node = mkElementGizmo(Color.rgb(0, 0, 0, 0.5), x, y, z)
 		override def repr: Drain = Drain(Vec3(x.value, y.value, z.value), width.value, depth.value)
 	}
+	import javafx.scene.{chart => jfxsc}
+
+	val InitMs = Instant.now().toEpochMilli
+	val fpsSeries = ObservableBuffer[jfxsc.XYChart.Data[String, Number]]()
+	val chart: AreaChart[String, Number] = new AreaChart(
+		CategoryAxis("+T"),
+		NumberAxis("Value"),
+		ObservableBuffer(XYChart.Series[String, Number]("FPS", fpsSeries))
+	){
+		maxHeight = 300
+
+	}
+	chart.legendSide = Side.Right
+	chart.createSymbols = false
+	chart.animated = false
+	chart.opacity = 0.7
+
+
+
 
 
 	val elementList = new ListView[Element[_]]() {
@@ -339,7 +361,7 @@ object MM extends JFXApp {
 					subScene,
 					new BorderPane() {
 						top = sceneControls
-						def mkAddElementButton(name: String, default:  () => Element[_]) = {
+						def mkAddElementButton(name: String, default: () => Element[_]) = {
 							new Button(name) {
 								onAction = handle {
 									val x = default()
@@ -348,6 +370,7 @@ object MM extends JFXApp {
 								}
 							}
 						}
+						bottom = chart
 						center = infoLabel
 						right = new VBox(
 							new HBox(
@@ -428,7 +451,7 @@ object MM extends JFXApp {
 			view.translateY = 200
 			view.translateX = -100
 			view.translateZ = 200
-//			sceneGroup.children += node
+			//			sceneGroup.children += node
 
 			val buffer = openSink(BasePath / "colliders.mmf", size = 16 * 4 * 50000)
 
@@ -498,7 +521,14 @@ object MM extends JFXApp {
 
 				//				_faces = Array.empty
 				println("\t->Tick")
-				infoLabel.text = s"${(1000.0 / elapsed).round}FPS (${elapsed}ms)" +
+
+
+				val fps = 1000.0 / elapsed
+
+				fpsSeries += XYChart.Data[String, Number]((Instant.now().toEpochMilli  - InitMs) + "ms", fps)
+				if(fpsSeries.length > 300) fpsSeries.remove(0, fpsSeries.length - 300 )
+
+				infoLabel.text = s"${fps.round}FPS (${elapsed}ms)" +
 								 s"\nParticles : ${_particles.length}" +
 								 s"\nTriangles : ${_points.length / 3}" +
 								 s"\nVertices  : ${_points.length}"
