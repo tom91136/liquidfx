@@ -27,7 +27,7 @@ import scalafx.scene.input.{KeyCode, KeyEvent, MouseEvent}
 import scalafx.scene.layout.{BorderPane, HBox, Priority, Region, StackPane, VBox}
 import scalafx.scene.paint.PhongMaterial
 import scalafx.scene.shape._
-import scalafx.scene.{Group, Node, Scene, SubScene}
+import scalafx.scene.{DepthTest, Group, Node, Scene, SubScene}
 
 
 object MM extends JFXApp {
@@ -92,10 +92,15 @@ object MM extends JFXApp {
 		mesh.faces = Array.tabulate(xs.length * 3)(i => i -> 0).flatMap { case (l, r) => Array(l, r) }
 	}
 
+	val vertexColourGroup = new Group() {
+		depthTest = DepthTest.Disabled
+	}
+
 	val sceneGroup = new Group(
 		SceneControl.mkAxis(),
 		//		new Box(10000, 1, 10000) {translateY = 2000},
 		meshView,
+		vertexColourGroup,
 	)
 
 
@@ -261,15 +266,16 @@ object MM extends JFXApp {
 		override val gizmo: Node = mkElementGizmo(Color.rgb(0, 0, 0, 0.5), x, y, z)
 		override def repr: Drain = Drain(Vec3(x.value, y.value, z.value), width.value, depth.value)
 	}
+
 	import javafx.scene.{chart => jfxsc}
 
-	val InitMs = Instant.now().toEpochMilli
-	val fpsSeries = ObservableBuffer[jfxsc.XYChart.Data[String, Number]]()
+	val InitMs                           = Instant.now().toEpochMilli
+	val fpsSeries                        = ObservableBuffer[jfxsc.XYChart.Data[String, Number]]()
 	val chart: AreaChart[String, Number] = new AreaChart(
 		CategoryAxis("+T"),
 		NumberAxis("Value"),
 		ObservableBuffer(XYChart.Series[String, Number]("FPS", fpsSeries))
-	){
+	) {
 		maxHeight = 300
 
 	}
@@ -277,9 +283,6 @@ object MM extends JFXApp {
 	chart.createSymbols = false
 	chart.animated = false
 	chart.opacity = 0.7
-
-
-
 
 
 	val elementList = new ListView[Element[_]]() {
@@ -490,6 +493,7 @@ object MM extends JFXApp {
 
 		@volatile var _points: Array[Float] = Array.empty
 		@volatile var _normals: Array[Float] = Array.empty
+		@volatile var _colours: Array[Int] = Array.empty
 		//		@volatile var _faces: Array[Int] = Array.empty
 
 		@volatile var _particles: Array[Particle] = Array.empty
@@ -510,6 +514,38 @@ object MM extends JFXApp {
 					mesh.points = _points
 					mesh.getNormals.setAll(_normals: _*)
 					mesh.faces = mkFaces(_points.length / 3, mesh.getVertexFormat)
+
+
+					(vertexColourGroup.children.length, _colours.length) match {
+						case (existing, now) if existing < now =>
+							vertexColourGroup.children ++= Array.fill(now - existing) {
+								new Sphere(5, 1) {
+									visible <== showParticle
+								}.delegate
+							}
+						case (existing, now) if existing > now =>
+							vertexColourGroup.children.removeRange(0, existing - now)
+						case _                                 => // great, nothing to do
+					}
+
+
+					_colours.zipWithIndex.foreach { case (x, i) =>
+
+						val c = Color.rgb(
+							(x >> 16) & 0xFF,
+							(x >> 8) & 0xFF,
+							(x >> 0) & 0xFF,
+							((x >> 24) & 0xFF).toFloat / 255)
+
+						val point = vertexColourGroup.children(i)
+							.asInstanceOf[javafx.scene.shape.Shape3D]
+						point.material = new PhongMaterial(Color.RED)
+						point.translateX = _points(i * 3 + 0)
+						point.translateY = _points(i * 3 + 1)
+						point.translateZ = _points(i * 3 + 2)
+					}
+
+
 				} finally {
 					lock.unlock()
 				}
@@ -525,8 +561,8 @@ object MM extends JFXApp {
 
 				val fps = 1000.0 / elapsed
 
-				fpsSeries += XYChart.Data[String, Number]((Instant.now().toEpochMilli  - InitMs) + "ms", fps)
-				if(fpsSeries.length > 300) fpsSeries.remove(0, fpsSeries.length - 300 )
+				fpsSeries += XYChart.Data[String, Number]((Instant.now().toEpochMilli - InitMs) + "ms", fps)
+				if (fpsSeries.length > 300) fpsSeries.remove(0, fpsSeries.length - 300)
 
 				infoLabel.text = s"${fps.round}FPS (${elapsed}ms)" +
 								 s"\nParticles : ${_particles.length}" +
@@ -550,11 +586,12 @@ object MM extends JFXApp {
 		}.start()
 
 		doUpdate(meshTrianglesCodec, sceneCodec) {
-			case MeshTriangles(vertices, normals) =>
+			case MeshTriangles(vertices, normals, colours) =>
 				try {
 					lock.lock()
 					_points = vertices
 					_normals = normals
+					_colours = colours
 					meshInvalidated.set(true)
 					val now = System.currentTimeMillis()
 					elapsed = now - last.getAndSet(now)

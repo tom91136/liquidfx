@@ -95,6 +95,27 @@ object StructDefs {
 		}
 	}
 
+	@inline def mkStagedReadIntTruncated(sizes: Long*): (ByteBuffer, Long) => Int = {
+		sizes.distinct.toList match {
+			case 1 :: Nil => (b: ByteBuffer, _: Long) => b.get.toInt
+			case 2 :: Nil => (b: ByteBuffer, _: Long) => b.getShort.toInt
+			case 4 :: Nil => (b: ByteBuffer, _: Long) => b.getInt
+			case 8 :: Nil => (b: ByteBuffer, _: Long) => b.getLong.toInt
+			case _ :: Nil => (b: ByteBuffer, l: Long) => readIntTruncated(b, l)
+		}
+	}
+
+
+	@inline def mkStagedWriteIntTruncated(sizes: Long*): (ByteBuffer, Long, Int) => Unit = {
+		sizes.distinct.toList match {
+			case 1 :: Nil => (b: ByteBuffer, _: Long, v: Int) => b.put(v.toByte)
+			case 2 :: Nil => (b: ByteBuffer, _: Long, v: Int) => b.putShort(v.toShort)
+			case 4 :: Nil => (b: ByteBuffer, _: Long, v: Int) => b.putInt(v)
+			case 8 :: Nil => (b: ByteBuffer, _: Long, v: Int) => b.putLong(v)
+			case _ :: Nil => (b: ByteBuffer, l: Long, v: Int) => writeIntTruncated(b, l, v)
+		}
+	}
+
 	type |>[A, B] = (A, () => B)
 
 	sealed trait Struct
@@ -391,7 +412,9 @@ object StructDefs {
 	}
 
 
-	case class MeshTriangles(vertices: Array[Float], normals: Array[Float]) extends Struct
+	case class MeshTriangles(vertices: Array[Float],
+							 normals: Array[Float],
+							 colours: Array[Int]) extends Struct
 	object MeshTriangles {
 		def apply(headerDef: StructDef[Header], sdef: StructDef[MeshTriangles]):
 		Either[Throwable, StructCodec[Header |> MeshTriangles, MeshTriangles]] = for {
@@ -416,6 +439,10 @@ object StructDefs {
 			n2y <- sdef.resolveLength("n2.y", 16)
 			n2z <- sdef.resolveLength("n2.z", 17)
 
+			cx <- sdef.resolveLength("c.x", 18)
+			cy <- sdef.resolveLength("c.y", 19)
+			cz <- sdef.resolveLength("c.z", 20)
+
 			headerCodec <- Header(headerDef)
 		} yield {
 			val readStaged = mkStagedReadFloatTruncated(
@@ -426,59 +453,71 @@ object StructDefs {
 				v0x, v0y, v0z, v1x, v1y, v1z, v2x, v2y, v2z,
 				n0x, n0y, n0z, n1x, n1y, n1z, n2x, n2y, n2z
 			)
-			val floatPerTrig = 3 * 3
+			val readColourStaged = mkStagedReadIntTruncated(cx, cy, cz)
+			val writeColourStaged = mkStagedWriteIntTruncated(cx, cy, cz)
+
+			val v3fn = 3 * 3
+			val s1in = 3
+
 			new StructCodec[Header |> MeshTriangles, MeshTriangles] {
 				override def read(buffer: ByteBuffer): Header |> MeshTriangles = {
 					val header = headerCodec.read(buffer)
 					header -> { () =>
-						val vertices = Array.ofDim[Float](header.entries * floatPerTrig)
-						val normals = Array.ofDim[Float](header.entries * floatPerTrig)
+						val vertices = Array.ofDim[Float](header.entries * v3fn)
+						val normals = Array.ofDim[Float](header.entries * v3fn)
+						val colours = Array.ofDim[Int](header.entries * s1in)
 						for (i <- 0 until header.entries) {
-							vertices(i * floatPerTrig + 0) = readStaged(buffer, v0x)
-							vertices(i * floatPerTrig + 1) = readStaged(buffer, v0y)
-							vertices(i * floatPerTrig + 2) = readStaged(buffer, v0z)
-							vertices(i * floatPerTrig + 3) = readStaged(buffer, v1x)
-							vertices(i * floatPerTrig + 4) = readStaged(buffer, v1y)
-							vertices(i * floatPerTrig + 5) = readStaged(buffer, v1z)
-							vertices(i * floatPerTrig + 6) = readStaged(buffer, v2x)
-							vertices(i * floatPerTrig + 7) = readStaged(buffer, v2y)
-							vertices(i * floatPerTrig + 8) = readStaged(buffer, v2z)
-							normals(i * floatPerTrig + 0) = readStaged(buffer, n0x)
-							normals(i * floatPerTrig + 1) = readStaged(buffer, n0y)
-							normals(i * floatPerTrig + 2) = readStaged(buffer, n0z)
-							normals(i * floatPerTrig + 3) = readStaged(buffer, n1x)
-							normals(i * floatPerTrig + 4) = readStaged(buffer, n1y)
-							normals(i * floatPerTrig + 5) = readStaged(buffer, n1z)
-							normals(i * floatPerTrig + 6) = readStaged(buffer, n2x)
-							normals(i * floatPerTrig + 7) = readStaged(buffer, n2y)
-							normals(i * floatPerTrig + 8) = readStaged(buffer, n2z)
+							vertices(i * v3fn + 0) = readStaged(buffer, v0x)
+							vertices(i * v3fn + 1) = readStaged(buffer, v0y)
+							vertices(i * v3fn + 2) = readStaged(buffer, v0z)
+							vertices(i * v3fn + 3) = readStaged(buffer, v1x)
+							vertices(i * v3fn + 4) = readStaged(buffer, v1y)
+							vertices(i * v3fn + 5) = readStaged(buffer, v1z)
+							vertices(i * v3fn + 6) = readStaged(buffer, v2x)
+							vertices(i * v3fn + 7) = readStaged(buffer, v2y)
+							vertices(i * v3fn + 8) = readStaged(buffer, v2z)
+							normals(i * v3fn + 0) = readStaged(buffer, n0x)
+							normals(i * v3fn + 1) = readStaged(buffer, n0y)
+							normals(i * v3fn + 2) = readStaged(buffer, n0z)
+							normals(i * v3fn + 3) = readStaged(buffer, n1x)
+							normals(i * v3fn + 4) = readStaged(buffer, n1y)
+							normals(i * v3fn + 5) = readStaged(buffer, n1z)
+							normals(i * v3fn + 6) = readStaged(buffer, n2x)
+							normals(i * v3fn + 7) = readStaged(buffer, n2y)
+							normals(i * v3fn + 8) = readStaged(buffer, n2z)
+							colours(i * s1in + 0) = readColourStaged(buffer, cx)
+							colours(i * s1in + 1) = readColourStaged(buffer, cy)
+							colours(i * s1in + 2) = readColourStaged(buffer, cz)
 						}
-						MeshTriangles(vertices, normals)
+						MeshTriangles(vertices, normals, colours)
 					}
 				}
 
 				override def write(b: MeshTriangles, buffer: ByteBuffer): Unit = {
-					val entries = b.vertices.length / floatPerTrig
+					val entries = b.vertices.length / v3fn
 					headerCodec.write(Header(entries), buffer)
 					for (i <- 0 until entries) {
-						writeStaged(buffer, v0x, b.vertices(i * floatPerTrig + 0))
-						writeStaged(buffer, v0y, b.vertices(i * floatPerTrig + 1))
-						writeStaged(buffer, v0z, b.vertices(i * floatPerTrig + 2))
-						writeStaged(buffer, v1x, b.vertices(i * floatPerTrig + 3))
-						writeStaged(buffer, v1y, b.vertices(i * floatPerTrig + 4))
-						writeStaged(buffer, v1z, b.vertices(i * floatPerTrig + 5))
-						writeStaged(buffer, v2x, b.vertices(i * floatPerTrig + 6))
-						writeStaged(buffer, v2y, b.vertices(i * floatPerTrig + 7))
-						writeStaged(buffer, v2z, b.vertices(i * floatPerTrig + 8))
-						writeStaged(buffer, n0x, b.normals(i * floatPerTrig + 0))
-						writeStaged(buffer, n0y, b.normals(i * floatPerTrig + 1))
-						writeStaged(buffer, n0z, b.normals(i * floatPerTrig + 2))
-						writeStaged(buffer, n1x, b.normals(i * floatPerTrig + 3))
-						writeStaged(buffer, n1y, b.normals(i * floatPerTrig + 4))
-						writeStaged(buffer, n1z, b.normals(i * floatPerTrig + 5))
-						writeStaged(buffer, n2x, b.normals(i * floatPerTrig + 6))
-						writeStaged(buffer, n2y, b.normals(i * floatPerTrig + 7))
-						writeStaged(buffer, n2z, b.normals(i * floatPerTrig + 8))
+						writeStaged(buffer, v0x, b.vertices(i * v3fn + 0))
+						writeStaged(buffer, v0y, b.vertices(i * v3fn + 1))
+						writeStaged(buffer, v0z, b.vertices(i * v3fn + 2))
+						writeStaged(buffer, v1x, b.vertices(i * v3fn + 3))
+						writeStaged(buffer, v1y, b.vertices(i * v3fn + 4))
+						writeStaged(buffer, v1z, b.vertices(i * v3fn + 5))
+						writeStaged(buffer, v2x, b.vertices(i * v3fn + 6))
+						writeStaged(buffer, v2y, b.vertices(i * v3fn + 7))
+						writeStaged(buffer, v2z, b.vertices(i * v3fn + 8))
+						writeStaged(buffer, n0x, b.normals(i * v3fn + 0))
+						writeStaged(buffer, n0y, b.normals(i * v3fn + 1))
+						writeStaged(buffer, n0z, b.normals(i * v3fn + 2))
+						writeStaged(buffer, n1x, b.normals(i * v3fn + 3))
+						writeStaged(buffer, n1y, b.normals(i * v3fn + 4))
+						writeStaged(buffer, n1z, b.normals(i * v3fn + 5))
+						writeStaged(buffer, n2x, b.normals(i * v3fn + 6))
+						writeStaged(buffer, n2y, b.normals(i * v3fn + 7))
+						writeStaged(buffer, n2z, b.normals(i * v3fn + 8))
+						writeColourStaged(buffer, cx, b.colours(i * s1in + 0))
+						writeColourStaged(buffer, cy, b.colours(i * s1in + 1))
+						writeColourStaged(buffer, cz, b.colours(i * s1in + 2))
 					}
 				}
 			}
