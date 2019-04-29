@@ -247,14 +247,39 @@ object MM extends JFXApp {
 		override def repr: Well = Well(Vec3(x.value, y.value, z.value), force.value)
 	}
 
+	def packARGB(c: Color): Int = {
+		val R = colour.value.getRed * 255
+		val G = colour.value.getGreen * 255
+		val B = colour.value.getBlue * 255
+		val A = colour.value.getOpacity * 255
+		((A.toInt & 0xFF) << 24) |
+		((R.toInt & 0xFF) << 16) |
+		((G.toInt & 0xFF) << 8) |
+		((B.toInt & 0xFF) << 0)
+	}
+
+	def unpackARGB(x: Int): Color = Color.rgb(
+		(x >> 16) & 0xFF,
+		(x >> 8) & 0xFF,
+		(x >> 0) & 0xFF,
+		((x >> 24) & 0xFF).toFloat / 255)
+
 	case class SourceElement(x: FloatProperty = FloatProperty(0),
 							 y: FloatProperty = FloatProperty(0),
 							 z: FloatProperty = FloatProperty(0),
+
+							 vx: FloatProperty = FloatProperty(0),
+							 vy: FloatProperty = FloatProperty(0),
+							 vz: FloatProperty = FloatProperty(0),
+
 							 rate: IntegerProperty = IntegerProperty(10),
-							 tag: IntegerProperty = IntegerProperty(2)
+							 tag: IntegerProperty = IntegerProperty(2),
+							 colour: ObjectProperty[Color] = ObjectProperty[Color](Color.RED)
 							) extends Element[Source] {
 		override val gizmo: Node = mkElementGizmo(Color.BLUE, x, y, z)
-		override def repr: Source = Source(Vec3(x.value, y.value, z.value), rate.value, tag.value)
+		override def repr: Source = Source(
+			centre = Vec3(x.value, y.value, z.value), velocity = Vec3(vx.value, vy.value, vz.value),
+			rate = rate.value, tag = tag.value, colour = packARGB(colour.value))
 	}
 
 	case class DrainElement(x: FloatProperty = FloatProperty(0),
@@ -302,24 +327,28 @@ object MM extends JFXApp {
 						()
 					}
 					graphic = n match {
-						case null                                => null
-						case WellElement(x, y, z, force)         => mkRow(new VBox(
+						case null                                                  => null
+						case WellElement(x, y, z, force)                           => mkRow(new VBox(
 							new Label("Well"),
 							mkSlider(x, -500, 500, "X", 80),
 							mkSlider(y, -500, 500, "Y", 80),
 							mkSlider(z, -500, 500, "Z", 80),
 							mkSlider(force, -50000, 50000, "Force", 80),
 						), deleteItem)
-						case SourceElement(x, y, z, rate, tag)   =>
+						case SourceElement(x, y, z, vx, vy, vz, rate, tag, colour) =>
 							mkRow(new VBox(
 								new Label("Source"),
 								mkSlider(x, -500, 500, "X", 80),
 								mkSlider(y, -500, 500, "Y", 80),
 								mkSlider(z, -500, 500, "Z", 80),
+								mkSlider(vx, -500, 500, "VX", 80),
+								mkSlider(vy, -500, 500, "VY", 80),
+								mkSlider(vz, -500, 500, "VZ", 80),
 								mkSlider(rate, 0, 100, "Rate", 80),
 								mkSlider(tag, 0, 1000, "Tag", 80),
+								new ColorPicker(colour.value) {colour <== this.value}
 							), deleteItem)
-						case DrainElement(x, y, z, width, depth) => mkRow(new VBox(
+						case DrainElement(x, y, z, width, depth)                   => mkRow(new VBox(
 							new Label("Drain"),
 							mkSlider(x, -500, 500, "X", 80),
 							mkSlider(y, -500, 500, "Y", 80),
@@ -516,33 +545,37 @@ object MM extends JFXApp {
 					mesh.faces = mkFaces(_points.length / 3, mesh.getVertexFormat)
 
 
-					(vertexColourGroup.children.length, _colours.length) match {
-						case (existing, now) if existing < now =>
-							vertexColourGroup.children ++= Array.fill(now - existing) {
-								new Sphere(5, 1) {
-									visible <== showParticle
-								}.delegate
-							}
-						case (existing, now) if existing > now =>
-							vertexColourGroup.children.removeRange(0, existing - now)
-						case _                                 => // great, nothing to do
-					}
+					if (showParticle.value) {
 
 
-					_colours.zipWithIndex.foreach { case (x, i) =>
+						(vertexColourGroup.children.length, _colours.length) match {
+							case (existing, now) if existing < now =>
+								vertexColourGroup.children ++= Array.fill(now - existing) {
+									new Sphere(5, 1) {
+										visible <== showParticle
+									}.delegate
+								}
+							case (existing, now) if existing > now =>
+								vertexColourGroup.children.removeRange(0, existing - now)
+							case _                                 => // great, nothing to do
+						}
 
-						val c = Color.rgb(
-							(x >> 16) & 0xFF,
-							(x >> 8) & 0xFF,
-							(x >> 0) & 0xFF,
-							((x >> 24) & 0xFF).toFloat / 255)
 
-						val point = vertexColourGroup.children(i)
-							.asInstanceOf[javafx.scene.shape.Shape3D]
-						point.material = new PhongMaterial(Color.RED)
-						point.translateX = _points(i * 3 + 0)
-						point.translateY = _points(i * 3 + 1)
-						point.translateZ = _points(i * 3 + 2)
+						_colours.zipWithIndex.foreach { case (x, i) =>
+
+							val c = unpackARGB(x)
+
+							//						println(c)
+
+							val point = vertexColourGroup.children(i)
+								.asInstanceOf[javafx.scene.shape.Shape3D]
+							point.material = new PhongMaterial(c)
+							point.translateX = _points(i * 3 + 0)
+							point.translateY = _points(i * 3 + 1)
+							point.translateZ = _points(i * 3 + 2)
+						}
+					} else {
+						vertexColourGroup.children.clear()
 					}
 
 

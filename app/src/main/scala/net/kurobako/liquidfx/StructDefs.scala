@@ -156,15 +156,20 @@ object StructDefs {
 		}
 	}
 
-	case class Source(centre: Vec3, rate: Long, tag: Long) extends Struct
+	case class Source(centre: Vec3, velocity: Vec3,
+					  rate: Long, tag: Long, colour: Int) extends Struct
 	object Source {
 		def apply(headerDef: StructDef[Header], sdef: StructDef[Array[Source]]):
 		Either[Throwable, StructCodec[Array[Source], Array[Source]]] = for {
 			sourcex <- sdef.resolveLength("source.x", 0)
 			sourcey <- sdef.resolveLength("source.y", 1)
 			sourcez <- sdef.resolveLength("source.z", 2)
-			rate <- sdef.resolveLength("rate", 3)
-			tag <- sdef.resolveLength("tag", 4)
+			source_velx <- sdef.resolveLength("source.vel.x", 3)
+			source_vely <- sdef.resolveLength("source.vel.y", 4)
+			source_velz <- sdef.resolveLength("source.vel.z", 5)
+			rate <- sdef.resolveLength("rate", 6)
+			tag <- sdef.resolveLength("tag", 7)
+			colour <- sdef.resolveLength("colour", 8)
 			header <- Header(headerDef)
 		} yield new StructCodec[Array[Source], Array[Source]] {
 			override def read(buffer: ByteBuffer): Array[Source] =
@@ -175,8 +180,15 @@ object StructDefs {
 							readFloatTruncated(buffer, sourcey),
 							readFloatTruncated(buffer, sourcez)
 						),
+						velocity = Vec3(
+							readFloatTruncated(buffer, source_velx),
+							readFloatTruncated(buffer, source_vely),
+							readFloatTruncated(buffer, source_velz)),
 						rate = readLongPromoted(buffer, rate),
-						tag = readLongPromoted(buffer, tag))
+						tag = readLongPromoted(buffer, tag),
+						colour = readIntTruncated(buffer, colour)
+					)
+
 				}
 			override def write(sources: Array[Source], buffer: ByteBuffer): Unit = {
 				header.write(Header(sources.length), buffer)
@@ -184,8 +196,12 @@ object StructDefs {
 					writeFloatTruncated(buffer, sourcex, source.centre.x)
 					writeFloatTruncated(buffer, sourcey, source.centre.y)
 					writeFloatTruncated(buffer, sourcez, source.centre.z)
+					writeFloatTruncated(buffer, source_velx, source.velocity.x)
+					writeFloatTruncated(buffer, source_vely, source.velocity.y)
+					writeFloatTruncated(buffer, source_velz, source.velocity.z)
 					writeLongTruncated(buffer, rate, source.rate)
 					writeLongTruncated(buffer, tag, source.tag)
+					writeLongTruncated(buffer, colour, source.colour)
 				}
 			}
 		}
