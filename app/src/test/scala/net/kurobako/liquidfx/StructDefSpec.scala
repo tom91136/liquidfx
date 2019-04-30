@@ -54,9 +54,10 @@ class StructDefSpec extends FlatSpec with Matchers {
 	}
 
 	implicit val particleEq: Equality[Particle] = (a: Particle, b: Any) => b match {
-		case Particle(id, tpe, mass, pos, vel) =>
+		case Particle(id, tpe, mass, colour, pos, vel) =>
 			id == a.id &&
 			tpe == a.tpe &&
+			colour== a.colour &&
 			(mass === a.mass +- 0.0000001f) &&
 			(pos === a.position) && (vel === a.velocity)
 		case _                                 => false
@@ -72,7 +73,7 @@ class StructDefSpec extends FlatSpec with Matchers {
 	"Particles" should "write and then read" in {
 		openRwMmf(1024 * 4).foreach { buffer =>
 			val expected = Particles(Array.tabulate(100) { i =>
-				Particle(i, i * 2, 42, Vec3(43), Vec3(math.Pi.toFloat))
+				Particle(i, i * 2, 42,43,  Vec3(43), Vec3(math.Pi.toFloat))
 			})
 			val reader = Particles(HeaderDef, ParticlesDef).right.get
 			buffer.clear()

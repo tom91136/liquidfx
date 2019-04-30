@@ -28,6 +28,16 @@ import scalafx.scene.input.{KeyCode, KeyEvent}
 
 object Application extends JFXApp {
 
+
+	def time[R](name: String)(block: => R): R = {
+		val t0 = System.nanoTime()
+		val result = block
+		val t1 = System.nanoTime()
+		println(s"[$name] " + (t1 - t0).toDouble / 1000000 + "ms")
+		result
+	}
+
+
 	val surface = BooleanProperty(true)
 	val play    = BooleanProperty(true)
 	val info    = StringProperty("")
@@ -109,7 +119,7 @@ object Application extends JFXApp {
 		   (x == wallC && y == wallC && z == wallC)
 
 	} yield {
-		val HS = 500f * (0.1f /2 )
+		val HS = 500f * (0.1f / 2)
 
 		Particle(
 			a = new Sphere(4, 5) {depthTest = DepthTest.Enable},
@@ -182,6 +192,27 @@ object Application extends JFXApp {
 	val bunnyMesh = mv
 		.getMesh.asInstanceOf[javafx.scene.shape.TriangleMesh]
 
+
+	val bunnySamples =
+
+		time("Sample") {
+			Bunny.samplePoints(bunnyMesh,  500f * (0.1f / 2f) )
+				.map(p => new Sphere(5, 1) {
+					translateX = p.x
+					translateY = p.y
+					translateZ = p.z
+					material = new PhongMaterial(Color.RED)
+				})
+		}
+
+	println("In Trig :" + bunnyMesh.getPoints.size().toFloat / 3 + " outPoint:" + bunnySamples.size)
+
+
+	val bunnySampleGroup = new Group(bunnySamples: _*) {
+
+	}
+
+
 	mv.setDrawMode(DrawMode.Fill)
 	mv.material = new PhongMaterial(Color.rgb(0, 100, 0, 0.3))
 	mv.depthTest = DepthTest.Enable
@@ -219,14 +250,6 @@ object Application extends JFXApp {
 			//			Colliders.convexBoxCollider(box3),
 		)
 
-
-		def time[R](name: String)(block: => R): R = {
-			val t0 = System.nanoTime()
-			val result = block
-			val t1 = System.nanoTime()
-			println(s"[$name] " + (t1 - t0).toDouble / 1000000 + "ms")
-			result
-		}
 
 
 		val gs = 8
@@ -358,7 +381,8 @@ object Application extends JFXApp {
 		box2,
 		box3,
 		centre,
-
+		//		bunny,
+		bunnySampleGroup
 		//				plane,
 		//				box,
 	) {

@@ -29,6 +29,9 @@ import scalafx.scene.paint.PhongMaterial
 import scalafx.scene.shape._
 import scalafx.scene.{DepthTest, Group, Node, Scene, SubScene}
 
+import scala.collection.mutable.ArrayBuffer
+import scala.util.Try
+
 
 object MM extends JFXApp {
 
@@ -39,9 +42,10 @@ object MM extends JFXApp {
 	private val gravity     = FloatProperty(9.8f)
 	private val colour      = ObjectProperty[Color](Color.rgb(0, 119, 190))
 
-	private val showParticle = BooleanProperty(false)
-	private val flatShading  = BooleanProperty(false)
-	private val wireFrame    = BooleanProperty(false)
+	private val showParticle     = BooleanProperty(false)
+	private val showVertexColour = BooleanProperty(false)
+	private val flatShading      = BooleanProperty(false)
+	private val wireFrame        = BooleanProperty(false)
 
 	private val BasePath = StandardSystemProperty.OS_NAME.value.toLowerCase match {
 		case win if win.contains("win")   => File("C:\\Users\\Tom\\libfluid\\cmake-build-release\\samples\\")
@@ -92,15 +96,15 @@ object MM extends JFXApp {
 		mesh.faces = Array.tabulate(xs.length * 3)(i => i -> 0).flatMap { case (l, r) => Array(l, r) }
 	}
 
-	val vertexColourGroup = new Group() {
-		depthTest = DepthTest.Disabled
-	}
+	val vertexColourGroup = new Group() {depthTest = DepthTest.Disabled}
+	val particleGroup     = new Group() {depthTest = DepthTest.Enable}
 
 	val sceneGroup = new Group(
 		SceneControl.mkAxis(),
 		//		new Box(10000, 1, 10000) {translateY = 2000},
 		meshView,
 		vertexColourGroup,
+		particleGroup
 	)
 
 
@@ -163,40 +167,58 @@ object MM extends JFXApp {
 		)
 	}
 
-	private def doUpdate(codec: StructCodec[Header |> MeshTriangles, MeshTriangles],
+	private def doUpdate(meshTriangle: StructCodec[Header |> MeshTriangles, MeshTriangles],
+						 particles: StructCodec[Header |> Particles, Particles],
 						 sceneCodec: StructCodec[StructDefs.Scene, StructDefs.Scene])
-						(action: MeshTriangles => Unit): Unit = {
+						(fMeshTriangles: MeshTriangles => Unit,
+						 fParticles: Particles => Unit): Unit = {
 		new Thread({ () =>
-			@volatile var last = 0L
+
+			val lastMeshTriangle = new AtomicLong(0)
+			val lastParticles = new AtomicLong(0)
+
 			val triangleSource = openSource(BasePath / "triangles.mmf")
+			val particleSource = Try(openSource(BasePath / "particles.mmf")).toOption
 			val sceneSink = openSink(BasePath / "scene.mmf", 8192) // FIXME compute from def
+
+			def readMeshTriangles(last: AtomicLong): Unit = {
+				val (header, readTrigs) = meshTriangle.read(triangleSource)
+				val start = header.timestamp
+				if (start != last.get() && header.written == header.entries) {
+					last.set(start)
+					time("read MeshTriangles") {fMeshTriangles(readTrigs())}
+				}
+			}
+
+			def readParticles(last: AtomicLong): Unit = particleSource.foreach { source =>
+				val (header, readParticles) = particles.read(source)
+				val start = header.timestamp
+				if (start != last.get() && header.written == header.entries) {
+					last.set(start)
+					time("read Particles") {fParticles(readParticles())}
+				}
+			}
+
 			while (true) {
 				try {
 					Thread.sleep((1000.0 / 60 / 2).toLong)
-					val (header, readTrigs) = codec.read(triangleSource)
-					val start = header.timestamp
-					if (start != last && header.written == header.entries) {
-						last = start
-
-						val scene = makeScene(suspend = true)
+					val scene = makeScene(suspend = true)
+					try {
 						sceneSink.clear()
 						sceneCodec.write(scene, sceneSink)
-						try {
-							time("doUpdate") {
-								action(readTrigs())
-							}
-						} finally {
-							sceneSink.clear()
-							sceneCodec.write(scene.copy(meta = scene.meta.copy(suspend = false)), sceneSink)
-						}
+						readMeshTriangles(lastMeshTriangle)
+						readParticles(lastParticles)
+					} finally {
+						sceneSink.clear()
+						sceneCodec.write(scene.copy(meta = scene.meta.copy(suspend = false)), sceneSink)
 					}
 				} catch {
-					case e: Throwable     => println("Warn:" + e.getClass + " -> " + e.getMessage)
+					case e: Throwable     => println("Warn:" + e.getClass + " -> " + e.getMessage); e.printStackTrace()
 					case e: InternalError => println("VM : " + e.getMessage)
 				} finally {
 					triangleSource.clear()
+					particleSource.foreach(_.clear())
 					sceneSink.clear()
-
 				}
 			}
 		}).start()
@@ -427,6 +449,7 @@ object MM extends JFXApp {
 				e.code match {
 					case KeyCode.S => meshView.visible = !meshView.visible.value
 					case KeyCode.P => showParticle.value = !showParticle.value
+					case KeyCode.C => showVertexColour.value = !showVertexColour.value
 					case KeyCode.W => wireFrame.value = !wireFrame.value
 					case KeyCode.F => flatShading.value = !flatShading.value
 					case _         =>
@@ -523,8 +546,6 @@ object MM extends JFXApp {
 		@volatile var _points: Array[Float] = Array.empty
 		@volatile var _normals: Array[Float] = Array.empty
 		@volatile var _colours: Array[Int] = Array.empty
-		//		@volatile var _faces: Array[Int] = Array.empty
-
 		@volatile var _particles: Array[Particle] = Array.empty
 
 		@volatile var elapsed: Long = 0l
@@ -532,6 +553,20 @@ object MM extends JFXApp {
 
 
 		val lock = new ReentrantLock()
+
+		val vertexColourNodes: ArrayBuffer[Sphere] = ArrayBuffer.empty
+		val particleNodes: ArrayBuffer[Sphere] = ArrayBuffer.empty
+
+		def fillOrRemove[A](xs: ArrayBuffer[A], n: Int)(f: => A): Unit = {
+			(xs.length, n) match {
+				case (existing, now) if existing < now =>
+					xs ++= ArrayBuffer.fill(now - existing)(f)
+				case (existing, now) if existing > now =>
+					xs.remove(0, existing - now)
+				case _                                 =>
+				// great, nothing to do
+			}
+		}
 
 		AnimationTimer { _ =>
 
@@ -544,53 +579,22 @@ object MM extends JFXApp {
 					mesh.getNormals.setAll(_normals: _*)
 					mesh.faces = mkFaces(_points.length / 3, mesh.getVertexFormat)
 
-
-					if (showParticle.value) {
-
-
-						(vertexColourGroup.children.length, _colours.length) match {
-							case (existing, now) if existing < now =>
-								vertexColourGroup.children ++= Array.fill(now - existing) {
-									new Sphere(5, 1) {
-										visible <== showParticle
-									}.delegate
-								}
-							case (existing, now) if existing > now =>
-								vertexColourGroup.children.removeRange(0, existing - now)
-							case _                                 => // great, nothing to do
+					if (showVertexColour.value) {
+						fillOrRemove(vertexColourNodes, _colours.length) {
+							new Sphere(5, 1)
 						}
-
-
+						vertexColourGroup.children.setAll(vertexColourNodes.map(_.delegate): _*)
 						_colours.zipWithIndex.foreach { case (x, i) =>
-
 							val c = unpackARGB(x)
-
-							//						println(c)
-
-							val point = vertexColourGroup.children(i)
-								.asInstanceOf[javafx.scene.shape.Shape3D]
+							val point = vertexColourNodes(i)
 							point.material = new PhongMaterial(c)
 							point.translateX = _points(i * 3 + 0)
 							point.translateY = _points(i * 3 + 1)
 							point.translateZ = _points(i * 3 + 2)
 						}
-					} else {
-						vertexColourGroup.children.clear()
-					}
+					} else vertexColourGroup.children.clear()
 
-
-				} finally {
-					lock.unlock()
-				}
-
-				//				mesh.points = pointsCopy
-				//				mesh.getNormals.setAll(normalsCopy: _*)
-				//				mesh.faces = mkFaces(pointsCopy.length / 3, mesh.getVertexFormat)
-
-
-				//				_faces = Array.empty
-				println("\t->Tick")
-
+				} finally lock.unlock()
 
 				val fps = 1000.0 / elapsed
 
@@ -602,23 +606,30 @@ object MM extends JFXApp {
 								 s"\nTriangles : ${_points.length / 3}" +
 								 s"\nVertices  : ${_points.length}"
 			}
-			if (showParticle.get() && particleInvalidated.getAndSet(false)) {
-				_particles.foreach { x =>
-					val sphere = particles.computeIfAbsent(x.id, { k =>
-						new Sphere(10) {
-							visible <== showParticle
-							material = new PhongMaterial(S.interpolate(E, k.toFloat / _particles.length))
-							sceneGroup.children += this.delegate
+			if (particleInvalidated.getAndSet(false)) {
+
+				try {
+					lock.lock()
+					if (showParticle.value) {
+						fillOrRemove(particleNodes, _particles.length) {
+							new Sphere(10, 3)
 						}
-					})
-					sphere.translateX = x.position.x
-					sphere.translateY = x.position.y
-					sphere.translateZ = x.position.z
-				}
+						particleGroup.children.setAll(particleNodes.map(_.delegate): _*)
+						_particles.zipWithIndex.foreach { case (x, i) =>
+							val c = unpackARGB(x.colour)
+							val point = particleNodes(i)
+							point.material = new PhongMaterial(c)
+							point.translateX = x.position.x
+							point.translateY = x.position.y
+							point.translateZ = x.position.z
+						}
+					} else particleGroup.children.clear()
+				} finally lock.unlock()
+
 			}
 		}.start()
 
-		doUpdate(meshTrianglesCodec, sceneCodec) {
+		doUpdate(meshTrianglesCodec, particlesCodec, sceneCodec)({
 			case MeshTriangles(vertices, normals, colours) =>
 				try {
 					lock.lock()
@@ -629,8 +640,13 @@ object MM extends JFXApp {
 					val now = System.currentTimeMillis()
 					elapsed = now - last.getAndSet(now)
 				} finally lock.unlock()
-		}
-
+		}, { case Particles(xs) =>
+			try {
+				lock.lock()
+				_particles = xs
+				particleInvalidated.set(true)
+			} finally lock.unlock()
+		})
 	}
 
 	run match {

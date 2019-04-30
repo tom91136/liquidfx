@@ -540,7 +540,7 @@ object StructDefs {
 		}
 	}
 
-	case class Particle(id: Long, tpe: Int, mass: Float,
+	case class Particle(id: Long, tpe: Int, mass: Float, colour : Int,
 						position: Vec3, velocity: Vec3)
 
 	case class Particles(xs: Array[Particle]) extends Struct
@@ -550,12 +550,13 @@ object StructDefs {
 			id <- sdef.resolveLength("id", 0)
 			tpe <- sdef.resolveLength("type", 1)
 			mass <- sdef.resolveLength("mass", 2)
-			positionX <- sdef.resolveLength("position.x", 3)
-			positionY <- sdef.resolveLength("position.y", 4)
-			positionZ <- sdef.resolveLength("position.z", 5)
-			velocityX <- sdef.resolveLength("velocity.x", 6)
-			velocityY <- sdef.resolveLength("velocity.y", 7)
-			velocityZ <- sdef.resolveLength("velocity.z", 8)
+			colour <- sdef.resolveLength("colour", 3)
+			positionX <- sdef.resolveLength("position.x", 4)
+			positionY <- sdef.resolveLength("position.y", 5)
+			positionZ <- sdef.resolveLength("position.z", 6)
+			velocityX <- sdef.resolveLength("velocity.x", 7)
+			velocityY <- sdef.resolveLength("velocity.y", 8)
+			velocityZ <- sdef.resolveLength("velocity.z", 9)
 			headerFormatter <- Header(headerDef)
 		} yield {
 			val readStaged = mkStagedReadFloatTruncated(
@@ -575,6 +576,7 @@ object StructDefs {
 								id = readLongPromoted(buffer, id),
 								tpe = readIntTruncated(buffer, tpe),
 								mass = readFloatTruncated(buffer, mass),
+								colour = readIntTruncated(buffer, colour),
 								position = Vec3(
 									readStaged(buffer, positionX),
 									readStaged(buffer, positionY),

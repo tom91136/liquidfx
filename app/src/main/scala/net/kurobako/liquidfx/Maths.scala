@@ -54,6 +54,8 @@ object Maths {
 		final val Zero        = Vec3(0f)
 	}
 
+	implicit val vec3Ord = Ordering.by[Vec3, (Float, Float, Float)](_.tuple)
+
 	case class Vec3(x: Float, y: Float, z: Float) {
 
 		def p3d: Point3D = new Point3D(x, y, z)
@@ -61,6 +63,7 @@ object Maths {
 		@inline def u: Float = x
 		@inline def v: Float = y
 		@inline def w: Float = z
+
 
 		@inline def array[N: ClassTag](f: Float => N): Array[N] = Array(f(x), f(y), f(z))
 		@inline def tuple: (Float, Float, Float) = (x, y, z)
@@ -96,6 +99,8 @@ object Maths {
 		@inline def dot(that: Vec3): Float = x * that.x + y * that.y + z * that.z
 
 		@inline def distance(that: Vec3): Float = Math.sqrt(distanceSq(that)).toFloat
+
+		@inline def mix(y : Vec3, a : Float): Vec3 = this + (y - this) * a
 
 		@inline def distanceSq(that: Vec3): Float = {
 			val a = x - that.x

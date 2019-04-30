@@ -5,6 +5,7 @@ import com.javafx.experiments.importers.Importer3D
 import javafx.scene.{DepthTest, Node}
 import javafx.scene.paint.{Color, PhongMaterial}
 import javafx.scene.shape.{DrawMode, MeshView, TriangleMesh}
+import net.kurobako.liquidfx.Maths.{Triangle, Vec3}
 import scalafx.scene.Group
 
 
@@ -18,7 +19,7 @@ object Bunny {
 		import scalafx.scene.paint.{Color, PhongMaterial}
 		import scalafx.scene.shape.{CullFace, DrawMode, MeshView, TriangleMesh}
 
-		val slope     = new TriangleMesh() {}
+		val slope = new TriangleMesh() {}
 		val slopeView = new MeshView(slope) {
 			drawMode = DrawMode.Fill
 			material = new PhongMaterial(Color.rgb(0, 100, 100, 0.5))
@@ -47,18 +48,17 @@ object Bunny {
 			.getChildren.get(0).asInstanceOf[javafx.scene.shape.MeshView]
 
 		meshView.setDrawMode(DrawMode.FILL)
-		meshView.setMaterial(new PhongMaterial(Color.rgb(200, 200, 200)){
+		meshView.setMaterial(new PhongMaterial(Color.rgb(200, 200, 200)) {
 			setSpecularColor(Color.rgb(255, 255, 255))
 		})
 		meshView.setDepthTest(DepthTest.ENABLE)
-		meshView.setScaleX (4.8)
-		meshView.setScaleY (4.8)
-		meshView.setScaleZ (4.8)
+		meshView.setScaleX(4.8)
+		meshView.setScaleY(4.8)
+		meshView.setScaleZ(4.8)
 		val bunnyMesh = meshView
 			.getMesh.asInstanceOf[javafx.scene.shape.TriangleMesh]
 		(bunny, meshView, bunnyMesh)
 	}
-
 
 
 	def makeMug(): (Node, MeshView, TriangleMesh) = {
@@ -67,7 +67,7 @@ object Bunny {
 			.getChildren.get(0).asInstanceOf[javafx.scene.shape.MeshView]
 
 		meshView.setDrawMode(DrawMode.FILL)
-		meshView.setMaterial(new PhongMaterial(Color.rgb(200, 200, 200)){
+		meshView.setMaterial(new PhongMaterial(Color.rgb(200, 200, 200)) {
 			setSpecularColor(Color.rgb(255, 255, 255))
 		})
 		meshView.setDepthTest(DepthTest.ENABLE)
@@ -78,6 +78,57 @@ object Bunny {
 		meshView.setScaleY(-100)
 		meshView.setScaleZ(100)
 		(bunny, meshView, bunnyMesh)
+	}
+
+	def time[R](name: String)(block: => R): R = {
+		val t0 = System.nanoTime()
+		val result = block
+		val t1 = System.nanoTime()
+		println(s"[$name] " + (t1 - t0).toDouble / 1000000 + "ms")
+		result
+	}
+
+	def samplePoints(tm: TriangleMesh, a: Float) = {
+
+		import Maths._
+
+
+		val vs =
+
+			time("group") {
+				tm.getPoints.toArray(Array[Float]())
+					.grouped(3).map(g => Vec3(g(0), g(1), g(2)))
+					//			.grouped(3).map(xs => Triangle(xs(0), xs(1), xs(2)))
+					.toArray
+			}
+
+		val min = vs.par.foldLeft(Vec3.Zero) { case (l, r) => Vec3(l.x min r.x, l.y min r.y, l.z min r.z) }
+		val max = vs.par.foldLeft(Vec3.Zero) { case (l, r) => Vec3(l.x max r.x, l.y max r.y, l.z max r.z) }
+
+
+		val tree = MutableUnsafeOctree[Vec3](Vec3.Zero, min distance max)(identity)
+
+
+		time("insert") {
+
+			vs.foreach(tree.insertPoint(_))
+		}
+
+		println((min - max) + " vs=" + vs.length)
+
+
+		val ps =
+			time("PARAM") {
+				for {
+					x <- (min.x to max.x by a /2 ).par
+					y <- (min.y to max.y by a /2 )
+					z <- (min.z to max.z by a /2 )
+					p = Vec3(x.toFloat, y.toFloat, z.toFloat)
+					if !tree.pointsInSphere(p, a / 2).isEmpty
+				} yield p
+			}
+
+		ps.seq
 	}
 
 

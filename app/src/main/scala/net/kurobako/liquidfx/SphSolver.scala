@@ -190,8 +190,8 @@ class SphSolver(val h: Float = 0.1f, // Particle(smoothing kernel) size
 		findNeighbour(atoms)
 		// hotspot 90%
 		for (i <- 0 until iteration) {
-			solveLambda(atoms)
-			solveDeltaP(atoms)
+			solveLambda(atoms.filter(_.particle.tpe == SphSolver.Fluid))
+			solveDeltaP(atoms.filter(_.particle.tpe == SphSolver.Fluid))
 			solveCollisionAndUpdate(atoms)
 		}
 		finalise(atoms).toArray
