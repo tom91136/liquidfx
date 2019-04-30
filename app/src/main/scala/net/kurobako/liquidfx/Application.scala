@@ -196,7 +196,13 @@ object Application extends JFXApp {
 	val bunnySamples =
 
 		time("Sample") {
-			Bunny.samplePoints(bunnyMesh,  500f * (0.1f / 2f) )
+
+
+			val ps = bunnyMesh.getPoints.toArray(Array[Float]())
+				.grouped(3).map(g => Vec3(g(0), g(1), g(2)))
+				.toArray
+
+			Bunny.samplePoints(ps,  500f * (0.1f / 2f) )
 				.map(p => new Sphere(5, 1) {
 					translateX = p.x
 					translateY = p.y

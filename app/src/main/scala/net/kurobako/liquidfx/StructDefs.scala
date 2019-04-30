@@ -364,6 +364,42 @@ object StructDefs {
 		}
 	}
 
+	case class RigidBody(points: Array[Vec3]) extends Struct
+	object RigidBody {
+		def apply(headerDef: StructDef[Header], sdef: StructDef[Vec3]):
+		Either[Throwable, StructCodec[Header |> RigidBody, RigidBody]] = for {
+
+			vec3x <- sdef.resolveLength("vec3.x", 0)
+			vec3y <- sdef.resolveLength("vec3.y", 1)
+			vec3z <- sdef.resolveLength("vec3.z", 2)
+			headerCodec <- Header(headerDef)
+		} yield {
+			val readStaged = mkStagedReadFloatTruncated(vec3x, vec3y, vec3z)
+			val writeStaged = mkStagedWriteFloatTruncated(vec3x, vec3y, vec3z)
+			new StructCodec[Header |> RigidBody, RigidBody] {
+				override def read(buffer: ByteBuffer): Header |> RigidBody = {
+					val header = headerCodec.read(buffer)
+					header -> { () =>
+						RigidBody(
+							Array.fill[Vec3](header.entries)(Vec3(
+								readStaged(buffer, vec3x),
+								readStaged(buffer, vec3y),
+								readStaged(buffer, vec3z)
+							)))
+					}
+				}
+
+				override def write(b: RigidBody, buffer: ByteBuffer): Unit = {
+					headerCodec.write(Header(b.points.length), buffer)
+					b.points.foreach { v =>
+						writeStaged(buffer, vec3x, v.x)
+						writeStaged(buffer, vec3y, v.y)
+						writeStaged(buffer, vec3z, v.z)
+					}
+				}
+			}
+		}
+	}
 
 	case class Triangles(vertices: Array[Float]) extends Struct
 	object Triangles {
@@ -540,7 +576,8 @@ object StructDefs {
 		}
 	}
 
-	case class Particle(id: Long, tpe: Int, mass: Float, colour : Int,
+
+	case class Particle(id: Long, tpe: Int, mass: Float, colour: Int,
 						position: Vec3, velocity: Vec3)
 
 	case class Particles(xs: Array[Particle]) extends Struct

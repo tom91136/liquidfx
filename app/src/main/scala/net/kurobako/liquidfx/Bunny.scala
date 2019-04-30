@@ -74,9 +74,9 @@ object Bunny {
 
 		val bunnyMesh = meshView
 			.getMesh.asInstanceOf[javafx.scene.shape.TriangleMesh]
-		meshView.setScaleX(100)
-		meshView.setScaleY(-100)
-		meshView.setScaleZ(100)
+		meshView.setScaleX(100 /2 )
+		meshView.setScaleY(-100 /2 )
+		meshView.setScaleZ(100 /2 )
 		(bunny, meshView, bunnyMesh)
 	}
 
@@ -88,19 +88,9 @@ object Bunny {
 		result
 	}
 
-	def samplePoints(tm: TriangleMesh, a: Float) = {
+	def samplePoints(vs: Array[Vec3], a: Float) = {
 
 		import Maths._
-
-
-		val vs =
-
-			time("group") {
-				tm.getPoints.toArray(Array[Float]())
-					.grouped(3).map(g => Vec3(g(0), g(1), g(2)))
-					//			.grouped(3).map(xs => Triangle(xs(0), xs(1), xs(2)))
-					.toArray
-			}
 
 		val min = vs.par.foldLeft(Vec3.Zero) { case (l, r) => Vec3(l.x min r.x, l.y min r.y, l.z min r.z) }
 		val max = vs.par.foldLeft(Vec3.Zero) { case (l, r) => Vec3(l.x max r.x, l.y max r.y, l.z max r.z) }
@@ -108,25 +98,23 @@ object Bunny {
 
 		val tree = MutableUnsafeOctree[Vec3](Vec3.Zero, min distance max)(identity)
 
-
 		time("insert") {
 
 			vs.foreach(tree.insertPoint(_))
 		}
 
-		println((min - max) + " vs=" + vs.length)
-
 
 		val ps =
 			time("PARAM") {
 				for {
-					x <- (min.x to max.x by a /2 ).par
-					y <- (min.y to max.y by a /2 )
-					z <- (min.z to max.z by a /2 )
+					x <- (min.x to max.x by a / 2).par
+					y <- (min.y to max.y by a / 2)
+					z <- (min.z to max.z by a / 2)
 					p = Vec3(x.toFloat, y.toFloat, z.toFloat)
 					if !tree.pointsInSphere(p, a / 2).isEmpty
 				} yield p
 			}
+		println((min - max) + " vs=" + vs.length + " -> " + ps.length)
 
 		ps.seq
 	}

@@ -486,11 +486,17 @@ object MM extends JFXApp {
 		drainDef <- defs.resolve[Array[Drain]]("drain")
 		sceneMetaDef <- defs.resolve[SceneMeta]("sceneMeta")
 
+		vec3Def <- defs.resolve[Vec3]("vec3")
+
+
 		trianglesDef <- defs.resolve[Triangles]("triangle")
 		particlesDef <- defs.resolve[Particles]("particle")
 		meshTrianglesDef <- defs.resolve[MeshTriangles]("meshTriangle")
 
 		sceneCodec <- StructDefs.Scene(sceneMetaDef, headerDef, wellDef, sourceDef, drainDef)
+
+		rigidBodyCodec <- RigidBody(headerDef, vec3Def)
+
 		particlesCodec <- Particles(headerDef, particlesDef)
 		trianglesCodec <- Triangles(headerDef, trianglesDef)
 		meshTrianglesCodec <- MeshTriangles(headerDef, meshTrianglesDef)
@@ -501,14 +507,21 @@ object MM extends JFXApp {
 		Platform.runLater {
 
 
-			val (node, view, trigs) = Bunny.makeMug()
-
+			val (colliderNode, view, trigs) = Bunny.makeMug()
 			view.translateY = 200
 			view.translateX = -100
 			view.translateZ = 200
-			//			sceneGroup.children += node
 
-			val buffer = openSink(BasePath / "colliders.mmf", size = 16 * 4 * 50000)
+			sceneGroup.children += colliderNode
+
+			val colliderBuffer = openSink(BasePath / "colliders.mmf", size = 16 * 4 * 50000)
+			val dBodyBuffer = openSink(BasePath / "dynamic_bodies.mmf", size = 16 * 4 * 50000)
+
+			val bunnySampleGroup = new Group( ) {
+
+			}
+			sceneGroup.children+= bunnySampleGroup
+
 
 			sceneGroup.onMouseReleased = handle {sceneGroup.onMouseDragged = null}
 			sceneGroup.onMouseClicked = { start: MouseEvent =>
@@ -519,14 +532,33 @@ object MM extends JFXApp {
 						view.translateX = delta.x
 						view.translateY = delta.y
 
-						val transformed = trigs.points.grouped(3).flatMap { g =>
+						val transformed = trigs.points.grouped(3).map { g =>
 							val p3 = view.localToParent(g(0), g(1), g(2))
-							Array(p3.getX.toFloat, p3.getY.toFloat, p3.getZ.toFloat)
+							Vec3(p3.getX.toFloat, p3.getY.toFloat, p3.getZ.toFloat)
 						}.toArray
 
-						println(s"points: ${transformed.length} ${transformed.par.min} ${transformed.par.max}")
-						buffer.clear()
-						trianglesCodec.write(Triangles(transformed), buffer)
+
+
+
+						val sampled = Bunny.samplePoints(transformed, (solverScale.value * (0.1 / 2)).toFloat).toArray
+
+
+						bunnySampleGroup.children.clear()
+						bunnySampleGroup.children = sampled.map(p => new Sphere(5, 1){
+							translateX = p.x
+							translateY = p.y
+							translateZ = p.z
+							material = new PhongMaterial(Color.RED)
+						})
+
+
+//						println(s"points: ${transformed.length} ${transformed.par.min} ${transformed.par.max}")
+//						colliderBuffer.clear()
+//						trianglesCodec.write(Triangles(transformed), colliderBuffer)
+
+
+						dBodyBuffer.clear()
+						rigidBodyCodec.write(RigidBody(sampled), dBodyBuffer)
 
 						drag.consume()
 					}
